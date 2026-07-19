@@ -23,12 +23,6 @@ const char* kDefaultUrl = "";
 const char* kDefaultEventsUrl = "";
 const char* kDefaultToggleUrl = "";
 const char* kDefaultCache = "/mnt/us/documents/kindle-dashboard-data.json";
-const char* kMealCoverPath = "/mnt/us/extensions/kindle-dashboard/assets/meal-planner-cover.pgm";
-const char* kMealCoverLocalPath = "kindle/kual/kindle-dashboard/assets/meal-planner-cover.pgm";
-const char* kChallengeCoverPath = "/mnt/us/extensions/kindle-dashboard/assets/challenge-75-day.pgm";
-const char* kChallengeCoverLocalPath = "kindle/kual/kindle-dashboard/assets/challenge-75-day.pgm";
-const char* kProfileCardPath = "/mnt/us/extensions/kindle-dashboard/assets/profile-placeholder.pgm";
-const char* kProfileCardLocalPath = "kindle/kual/kindle-dashboard/assets/profile-placeholder.pgm";
 const char* kRecipeAssetsPath = "/mnt/us/extensions/kindle-dashboard/assets/recipes";
 const char* kRecipeAssetsLocalPath = "kindle/kual/kindle-dashboard/assets/recipes";
 const int kDefaultIntervalSeconds = 3600;
@@ -50,14 +44,9 @@ volatile sig_atomic_t g_manual_fetch_refresh = 0;
 int g_last_screen_width = kBitmapFallbackWidth;
 int g_last_screen_height = kBitmapFallbackHeight;
 int g_active_list = -1;
-int g_active_meal_planner = 0;
 int g_active_recipes = 0;
 int g_active_recipe = -1;
-int g_active_recipe_library = 0;
-int g_active_recipe_return_meal_planner = 0;
-int g_active_challenge = 0;
 int g_invert_images = 0;
-int g_day_offset = 0;
 
 enum TouchAction {
   kTouchNone = 0,
@@ -65,15 +54,10 @@ enum TouchAction {
   kTouchBack = 2,
   kTouchOpenList = 3,
   kTouchToggleItem = 4,
-  kTouchOpenMealPlanner = 5,
   kTouchOpenRecipe = 6,
   kTouchOpenRecipes = 7,
   kTouchHome = 8,
-  kTouchOpenChallenge = 9,
-  kTouchOpenMealPlanRecipe = 10,
-  kTouchPreviousDay = 11,
-  kTouchNextDay = 12,
-  kTouchToday = 13
+  kTouchRefresh = 14
 };
 
 struct Item {
@@ -117,26 +101,10 @@ struct RecipeRecord {
 struct Dashboard {
   char generated_at[40];
   char version[32];
-  int steps;
-  int calories;
-  int protein_g;
-  int challenge_day;
-  int water_tenths;
-  int water_target_tenths;
-  int sleep_tenths;
-  int sleep_target_tenths;
-  int workouts;
-  int workout_target;
-  int steps_target;
-  int calories_target;
-  char steps_unit[16];
-  char calories_unit[16];
   List lists[kMaxLists];
   int list_count;
   RecipeRecord recipes[kMaxRecipes];
   int recipe_count;
-  int meal_plan_recipe_indices[kMaxRecipes];
-  int meal_plan_count;
 };
 
 struct Options {
@@ -188,87 +156,6 @@ struct TouchRegion {
   char item_id[48];
   int item_done;
 };
-
-struct MealPlanEntry {
-  const char* meal;
-  const char* title;
-  const char* time;
-  const char* recipe;
-  const char* photo_path;
-  const char* photo_fallback_path;
-  RecipeIngredient ingredients[kMaxRecipeIngredients];
-  int ingredient_count;
-  const char* steps;
-  int calories;
-  int carbs;
-  int fat;
-  int protein;
-};
-
-const MealPlanEntry kMealPlan[] = {
-  {
-    "BREAKFAST",
-    "SAVORY OATS",
-    "8:30 AM",
-    "OATS + EGG + GREENS",
-    kMealCoverPath,
-    kMealCoverLocalPath,
-    {
-      {"OATS", "1/2 CUP"},
-      {"EGG", "1"},
-      {"SPINACH", "1 CUP"},
-      {"LEMON", "1 WEDGE"}
-    },
-    4,
-    "SIMMER OATS. FOLD GREENS. TOP WITH EGG.",
-    410,
-    48,
-    14,
-    22
-  },
-  {
-    "LUNCH",
-    "CHICKPEA WRAP",
-    "1:00 PM",
-    "CHICKPEA + PESTO WRAP",
-    kMealCoverPath,
-    kMealCoverLocalPath,
-    {
-      {"CHICKPEAS", "3/4 CUP"},
-      {"PESTO", "1 TBSP"},
-      {"TORTILLA", "1 LARGE"},
-      {"CUCUMBER", "1/2 CUP"}
-    },
-    4,
-    "MASH CHICKPEAS. SPREAD PESTO. ROLL TIGHT.",
-    520,
-    62,
-    18,
-    24
-  },
-  {
-    "DINNER",
-    "PIZZA TOAST",
-    "7:30 PM",
-    "MELTY PIZZA TOAST",
-    kMealCoverPath,
-    kMealCoverLocalPath,
-    {
-      {"BREAD", "2 SLICES"},
-      {"SAUCE", "1/4 CUP"},
-      {"MOZZARELLA", "2 OZ"},
-      {"BASIL", "6 LEAVES"}
-    },
-    4,
-    "SAUCE BREAD. ADD TOPPINGS. TOAST UNTIL MELTY.",
-    610,
-    58,
-    26,
-    31
-  }
-};
-
-const int kMealPlanCount = static_cast<int>(sizeof(kMealPlan) / sizeof(kMealPlan[0]));
 
 const int kMaxTouchRegions = 32;
 TouchRegion g_touch_regions[kMaxTouchRegions];
@@ -520,62 +407,12 @@ int parseRecipes(const char* json, Dashboard* dashboard) {
   return 1;
 }
 
-int recipeIndexById(const Dashboard* dashboard, const char* id) {
-  if (!dashboard || !id || !id[0]) return -1;
-  for (int i = 0; i < dashboard->recipe_count; i++) {
-    if (strcmp(dashboard->recipes[i].id, id) == 0) return i;
-  }
-  return -1;
-}
-
-int parseMealPlan(const char* json, Dashboard* dashboard) {
-  const char* meal_plan_value = findKeyInRange(json, NULL, "meal_plan");
-  if (!meal_plan_value || *meal_plan_value != '[') return 0;
-  const char* meal_plan_end = matchingClose(meal_plan_value, ']');
-  if (!meal_plan_end) return 0;
-
-  const char* cursor = meal_plan_value + 1;
-  while (cursor < meal_plan_end && dashboard->meal_plan_count < kMaxRecipes) {
-    const char* object_start = strchr(cursor, '{');
-    if (!object_start || object_start >= meal_plan_end) break;
-    const char* object_end = matchingClose(object_start, '}');
-    if (!object_end || object_end > meal_plan_end) break;
-
-    char id[48];
-    extractString(object_start, object_end, "id", id, sizeof(id), "");
-    const int recipe_index = recipeIndexById(dashboard, id);
-    if (recipe_index >= 0) {
-      dashboard->meal_plan_recipe_indices[dashboard->meal_plan_count++] = recipe_index;
-    }
-    cursor = object_end + 1;
-  }
-  return 1;
-}
-
 int parseDashboard(const char* json, Dashboard* dashboard) {
   memset(dashboard, 0, sizeof(*dashboard));
-  copyText(dashboard->steps_unit, sizeof(dashboard->steps_unit), "steps");
-  copyText(dashboard->calories_unit, sizeof(dashboard->calories_unit), "kcal");
 
   if (!json || !extractBool(json, NULL, "ok", 0)) return 0;
   extractString(json, NULL, "generated_at", dashboard->generated_at, sizeof(dashboard->generated_at), "unknown");
   extractString(json, NULL, "version", dashboard->version, sizeof(dashboard->version), "");
-  dashboard->steps = extractInt(json, NULL, "steps", 0);
-  dashboard->calories = extractInt(json, NULL, "calories", 0);
-  dashboard->protein_g = extractInt(json, NULL, "protein_g", 0);
-  dashboard->challenge_day = extractInt(json, NULL, "day", 1);
-  if (dashboard->challenge_day < 1) dashboard->challenge_day = 1;
-  if (dashboard->challenge_day > 75) dashboard->challenge_day = 75;
-  dashboard->water_tenths = extractScaledInt(json, NULL, "water_l", 10, 0);
-  dashboard->water_target_tenths = extractScaledInt(json, NULL, "water_target_l", 10, 30);
-  dashboard->sleep_tenths = extractScaledInt(json, NULL, "sleep_hours", 10, 0);
-  dashboard->sleep_target_tenths = extractScaledInt(json, NULL, "sleep_target_hours", 10, 80);
-  dashboard->workouts = extractInt(json, NULL, "workouts", 0);
-  dashboard->workout_target = extractInt(json, NULL, "workout_target", 2);
-  dashboard->steps_target = extractInt(json, NULL, "steps_target", 10000);
-  dashboard->calories_target = extractInt(json, NULL, "calories_target", 2000);
-  extractString(json, NULL, "steps_unit", dashboard->steps_unit, sizeof(dashboard->steps_unit), "steps");
-  extractString(json, NULL, "calories_unit", dashboard->calories_unit, sizeof(dashboard->calories_unit), "kcal");
 
   const char* lists_value = findKeyInRange(json, NULL, "lists");
   if (!lists_value || *lists_value != '[') return 1;
@@ -597,7 +434,6 @@ int parseDashboard(const char* json, Dashboard* dashboard) {
     cursor = object_end + 1;
   }
   parseRecipes(json, dashboard);
-  parseMealPlan(json, dashboard);
   return 1;
 }
 
@@ -621,28 +457,6 @@ void fit(char* line) {
 void upperCopy(char* dest, size_t size, const char* source) {
   copyText(dest, size, source);
   for (size_t i = 0; dest[i]; i++) dest[i] = static_cast<char>(toupper(static_cast<unsigned char>(dest[i])));
-}
-
-void formatNumber(int value, char* out, size_t size) {
-  char raw[32];
-  snprintf(raw, sizeof(raw), "%d", value);
-  const int len = static_cast<int>(strlen(raw));
-  int commas = (len - 1) / 3;
-  int out_len = len + commas;
-  if (out_len + 1 > static_cast<int>(size)) {
-    copyText(out, size, raw);
-    return;
-  }
-  out[out_len] = '\0';
-  int group = 0;
-  for (int i = len - 1, j = out_len - 1; i >= 0; i--, j--) {
-    if (group == 3) {
-      out[j--] = ',';
-      group = 0;
-    }
-    out[j] = raw[i];
-    group++;
-  }
 }
 
 void formatDisplayDate(const char* iso, const char* status, char* out, size_t size) {
@@ -689,47 +503,12 @@ void addCardText(char lines[][96], int* count, const char* text) {
   addLine(lines, count, line);
 }
 
-void addCardPair(char lines[][96], int* count, const char* left, const char* right) {
-  char left_clipped[32];
-  char right_clipped[24];
-  copyText(left_clipped, sizeof(left_clipped), left);
-  copyText(right_clipped, sizeof(right_clipped), right);
-  left_clipped[27] = '\0';
-  right_clipped[8] = '\0';
-  char line[96];
-  snprintf(line, sizeof(line), "| %-27.27s %8.8s |", left_clipped, right_clipped);
-  addLine(lines, count, line);
-}
-
 void addSectionTitle(char lines[][96], int* count, const char* title) {
   char upper[48];
   upperCopy(upper, sizeof(upper), title);
   char text[64];
   snprintf(text, sizeof(text), " %s", upper);
   addCardText(lines, count, text);
-}
-
-void addMetric(char lines[][96], int* count, const char* label, int value, int target, const char* unit) {
-  const int percent = target > 0 ? (value * 100) / target : 0;
-  const int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
-  const int filled = (clamped * 14) / 100;
-  char bar[20];
-  for (int i = 0; i < 14; i++) bar[i] = i < filled ? '#' : '.';
-  bar[14] = '\0';
-
-  char value_text[32];
-  char target_text[32];
-  formatNumber(value, value_text, sizeof(value_text));
-  formatNumber(target, target_text, sizeof(target_text));
-  char left[40];
-  char right[24];
-  snprintf(left, sizeof(left), "%s %s/%s %s", label, value_text, target_text, unit);
-  snprintf(right, sizeof(right), "%d%%", clamped);
-  addCardPair(lines, count, left, right);
-
-  char progress[64];
-  snprintf(progress, sizeof(progress), " [%s]", bar);
-  addCardText(lines, count, progress);
 }
 
 const char* displayListTitle(const List* list);
@@ -768,15 +547,11 @@ int renderLines(const Dashboard* dashboard, const char* status, char lines[][96]
   snprintf(sync, sizeof(sync), " Sync %.16s", dashboard->generated_at[0] ? dashboard->generated_at : "unknown");
   addCardText(lines, &count, sync);
   char mode[64];
-  snprintf(mode, sizeof(mode), " Mode %s | refresh 15m", status);
+  snprintf(mode, sizeof(mode), " Mode %s | tap refresh anytime", status);
   addCardText(lines, &count, mode);
   addRule(lines, &count);
-  addSectionTitle(lines, &count, "Health");
-  addMetric(lines, &count, "STEPS", dashboard->steps, dashboard->steps_target, dashboard->steps_unit);
-  addMetric(lines, &count, "CAL", dashboard->calories, dashboard->calories_target, dashboard->calories_unit);
-  addRule(lines, &count);
   for (int i = 0; i < dashboard->list_count; i++) addList(lines, &count, &dashboard->lists[i]);
-  addCardText(lines, &count, " Telegram updates lists");
+  addCardText(lines, &count, " Telegram keeps lists in sync");
   addRule(lines, &count);
   return count;
 }
@@ -806,9 +581,75 @@ void strokeRect(Canvas* canvas, int x, int y, int w, int h, int thickness, unsig
   fillRect(canvas, x + w - thickness, y, thickness, h, color);
 }
 
-void doubleRect(Canvas* canvas, int x, int y, int w, int h, unsigned char color) {
-  strokeRect(canvas, x, y, w, h, 3, color);
-  strokeRect(canvas, x + 7, y + 7, w - 14, h - 14, 2, color);
+int clampRoundedRadius(int w, int h, int radius) {
+  const int min_side = w < h ? w : h;
+  const int max_radius = min_side / 2;
+  if (radius < 0) return 0;
+  if (radius > max_radius) return max_radius;
+  return radius;
+}
+
+// True if the local point (xx, yy) inside a w x h box falls within a
+// rounded-rectangle of corner radius r (same distance-formula technique
+// circleRing already uses, applied per-corner).
+int insideRoundedRect(int xx, int yy, int w, int h, int r) {
+  if (xx < 0 || yy < 0 || xx >= w || yy >= h) return 0;
+  if (r <= 0) return 1;
+  int dx = 0;
+  int dy = 0;
+  if (xx < r && yy < r) {
+    dx = r - 1 - xx;
+    dy = r - 1 - yy;
+  } else if (xx >= w - r && yy < r) {
+    dx = xx - (w - r);
+    dy = r - 1 - yy;
+  } else if (xx < r && yy >= h - r) {
+    dx = r - 1 - xx;
+    dy = yy - (h - r);
+  } else if (xx >= w - r && yy >= h - r) {
+    dx = xx - (w - r);
+    dy = yy - (h - r);
+  } else {
+    return 1;
+  }
+  return dx * dx + dy * dy <= r * r;
+}
+
+void fillRoundedRect(Canvas* canvas, int x, int y, int w, int h, int radius, unsigned char color) {
+  if (w <= 0 || h <= 0) return;
+  const int r = clampRoundedRadius(w, h, radius);
+  for (int yy = 0; yy < h; yy++) {
+    const int py = y + yy;
+    if (py < 0 || py >= canvas->height) continue;
+    for (int xx = 0; xx < w; xx++) {
+      if (insideRoundedRect(xx, yy, w, h, r)) setPixel(canvas, x + xx, py, color);
+    }
+  }
+}
+
+void strokeRoundedRect(Canvas* canvas, int x, int y, int w, int h, int radius, int thickness, unsigned char color) {
+  if (w <= 0 || h <= 0 || thickness <= 0) return;
+  const int r = clampRoundedRadius(w, h, radius);
+  const int inner_w = w - 2 * thickness;
+  const int inner_h = h - 2 * thickness;
+  const int inner_r = r > thickness ? r - thickness : 0;
+  for (int yy = 0; yy < h; yy++) {
+    const int py = y + yy;
+    if (py < 0 || py >= canvas->height) continue;
+    for (int xx = 0; xx < w; xx++) {
+      if (!insideRoundedRect(xx, yy, w, h, r)) continue;
+      if (inner_w > 0 && inner_h > 0 && insideRoundedRect(xx - thickness, yy - thickness, inner_w, inner_h, inner_r)) continue;
+      setPixel(canvas, x + xx, py, color);
+    }
+  }
+}
+
+void doubleRoundedRect(Canvas* canvas, int x, int y, int w, int h, int radius, unsigned char color) {
+  const int r = clampRoundedRadius(w, h, radius);
+  strokeRoundedRect(canvas, x, y, w, h, r, 3, color);
+  const int inset = 7;
+  const int inner_r = r > inset ? r - inset : 0;
+  strokeRoundedRect(canvas, x + inset, y + inset, w - inset * 2, h - inset * 2, inner_r, 2, color);
 }
 
 void line(Canvas* canvas, int x0, int y0, int x1, int y1, int thickness, unsigned char color) {
@@ -847,21 +688,6 @@ void circleRing(Canvas* canvas, int cx, int cy, int radius, int thickness, int p
       double angle = atan2(static_cast<double>(dy), static_cast<double>(dx)) + M_PI / 2.0;
       if (angle < 0) angle += M_PI * 2.0;
       if (angle / (M_PI * 2.0) <= progress) setPixel(canvas, x, y, color);
-    }
-  }
-}
-
-void circleTrack(Canvas* canvas, int cx, int cy, int radius, int thickness) {
-  const int outer = radius;
-  const int inner = radius - thickness;
-  const int outer2 = outer * outer;
-  const int inner2 = inner * inner;
-  for (int y = cy - outer; y <= cy + outer; y++) {
-    for (int x = cx - outer; x <= cx + outer; x++) {
-      const int dx = x - cx;
-      const int dy = y - cy;
-      const int d2 = dx * dx + dy * dy;
-      if (d2 <= outer2 && d2 >= inner2) setPixel(canvas, x, y, 224);
     }
   }
 }
@@ -1082,40 +908,6 @@ void freePgmCache() {
   g_pgm_cache_count = 0;
 }
 
-void drawPgmImage(Canvas* canvas, int x, int y, int w, int h, const char* primary_path, const char* fallback_path, int invert) {
-  int image_w = 0;
-  int image_h = 0;
-  const unsigned char* pixels = loadCachedPgmPixels(primary_path, fallback_path, &image_w, &image_h);
-  if (!pixels) {
-    strokeRect(canvas, x, y, w, h, 2, 0);
-    drawTextCentered(canvas, x + w / 2, y + h / 2 - 12, w - 20, "MEAL ART", 3, 0);
-    return;
-  }
-
-  fillRect(canvas, x, y, w, h, invert ? 0 : 255);
-
-  int draw_w = w;
-  int draw_h = h;
-  if (image_w * h > w * image_h) {
-    draw_h = (w * image_h) / image_w;
-  } else {
-    draw_w = (h * image_w) / image_h;
-  }
-  if (draw_w < 1) draw_w = 1;
-  if (draw_h < 1) draw_h = 1;
-
-  const int draw_x = x + (w - draw_w) / 2;
-  const int draw_y = y + (h - draw_h) / 2;
-  for (int yy = 0; yy < draw_h; yy++) {
-    const int source_y = (yy * image_h) / draw_h;
-    for (int xx = 0; xx < draw_w; xx++) {
-      const int source_x = (xx * image_w) / draw_w;
-      const unsigned char value = pixels[source_y * image_w + source_x];
-      setPixel(canvas, draw_x + xx, draw_y + yy, invert ? static_cast<unsigned char>(255 - value) : value);
-    }
-  }
-}
-
 void drawPgmImageCover(Canvas* canvas, int x, int y, int w, int h, const char* primary_path, const char* fallback_path, int invert) {
   int image_w = 0;
   int image_h = 0;
@@ -1219,42 +1011,6 @@ void drawBitmapDashboard(Canvas* canvas, const Dashboard* dashboard, const char*
 void clearTouchRegions();
 void addTouchRegion(Rect rect, TouchAction action, int list_index, int item_index, const char* item_id, int item_done);
 
-void drawRadialMetric(Canvas* canvas, int x, int y, int w, int h, const char* label, int value, int target, const char* unit) {
-  strokeRect(canvas, x, y, w, h, 2, 0);
-  const int percent = target > 0 ? (value * 100) / target : 0;
-  const int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
-  const int min_side = w < h ? w : h;
-  const int radius = w < 160 ? min_side / 4 : min_side / 3;
-  const int ring_thickness = w < 160 ? 10 : 14;
-  const int percent_scale = w < 160 ? 3 : 4;
-  const int cx = x + w / 2;
-  const int cy = y + h / 2 - 18;
-  circleTrack(canvas, cx, cy, radius, ring_thickness);
-  circleRing(canvas, cx, cy, radius, ring_thickness, clamped, 0);
-
-  char percent_text[24];
-  snprintf(percent_text, sizeof(percent_text), "%d%%", clamped);
-  drawTextCentered(canvas, cx, cy - 21, 132, percent_text, percent_scale, 0);
-  drawTextCentered(canvas, cx, cy + 24, 132, label, 2, 0);
-
-  char value_text[32];
-  char target_text[32];
-  char metric[80];
-  formatNumber(value, value_text, sizeof(value_text));
-  formatNumber(target, target_text, sizeof(target_text));
-  const int metric_scale = w < 260 ? 2 : 3;
-  if (w < 260) snprintf(metric, sizeof(metric), "%s / %s", value_text, target_text);
-  else snprintf(metric, sizeof(metric), "%s / %s %s", value_text, target_text, unit);
-  drawTextCentered(canvas, cx, y + h - 38, w - 18, metric, metric_scale, 0);
-}
-
-void formatTenths(int value, char* out, size_t size) {
-  const int whole = value / 10;
-  const int fraction = value < 0 ? -(value % 10) : value % 10;
-  if (fraction == 0) snprintf(out, size, "%d", whole);
-  else snprintf(out, size, "%d.%d", whole, fraction);
-}
-
 void drawStarIcon(Canvas* canvas, int x, int y, int scale, int filled) {
   static const char* filled_mask[] = {
     "......#......",
@@ -1301,105 +1057,61 @@ void drawStarRating(Canvas* canvas, int x, int y, int rating_tenths, int scale) 
   }
 }
 
-void drawRadialMetricTenths(Canvas* canvas, int x, int y, int w, int h, const char* label, int value, int target, const char* unit) {
-  strokeRect(canvas, x, y, w, h, 2, 0);
-  const int percent = target > 0 ? (value * 100) / target : 0;
-  const int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
-  const int min_side = w < h ? w : h;
-  const int radius = w < 160 ? min_side / 4 : min_side / 3;
-  const int ring_thickness = w < 160 ? 10 : 14;
-  const int percent_scale = w < 160 ? 3 : 4;
-  const int cx = x + w / 2;
-  const int cy = y + h / 2 - 18;
-  circleTrack(canvas, cx, cy, radius, ring_thickness);
-  circleRing(canvas, cx, cy, radius, ring_thickness, clamped, 0);
-
-  char percent_text[24];
-  snprintf(percent_text, sizeof(percent_text), "%d%%", clamped);
-  drawTextCentered(canvas, cx, cy - 21, 132, percent_text, percent_scale, 0);
-  drawTextCentered(canvas, cx, cy + 24, 132, label, 2, 0);
-
-  char value_text[32];
-  char target_text[32];
-  char metric[80];
-  formatTenths(value, value_text, sizeof(value_text));
-  formatTenths(target, target_text, sizeof(target_text));
-  const int metric_scale = w < 260 ? 2 : 3;
-  if (w < 260) snprintf(metric, sizeof(metric), "%s / %s", value_text, target_text);
-  else snprintf(metric, sizeof(metric), "%s / %s %s", value_text, target_text, unit);
-  drawTextCentered(canvas, cx, y + h - 38, w - 18, metric, metric_scale, 0);
+void drawCheckbox(Canvas* canvas, int x, int y, int size, int checked) {
+  if (checked) {
+    fillRoundedRect(canvas, x, y, size, size, size / 4, 0);
+    const int cx0 = x + size * 2 / 10;
+    const int cy0 = y + size * 5 / 10;
+    const int cx1 = x + size * 4 / 10;
+    const int cy1 = y + size * 7 / 10;
+    const int cx2 = x + size * 8 / 10;
+    const int cy2 = y + size * 3 / 10;
+    const int thickness = size < 24 ? 2 : 3;
+    line(canvas, cx0, cy0, cx1, cy1, thickness, 255);
+    line(canvas, cx1, cy1, cx2, cy2, thickness, 255);
+  } else {
+    strokeRoundedRect(canvas, x, y, size, size, size / 4, 2, 0);
+  }
 }
 
-void drawChallengeStreakCard(Canvas* canvas, int x, int y, int w, int h, int current_day) {
-  strokeRect(canvas, x, y, w, h, 3, 0);
-  const int title_scale = textWidth("STREAK", 4) <= w - 24 ? 4 : 3;
-  drawTextCentered(canvas, x + w / 2, y + 20, w - 24, "STREAK", title_scale, 0);
-  line(canvas, x + 14, y + 62, x + w - 14, y + 62, 2, 0);
-
-  char day_text[32];
-  snprintf(day_text, sizeof(day_text), "%d / 75", current_day);
-  drawTextCentered(canvas, x + w / 2, y + 84, w - 24, day_text, 3, 0);
-
-  const int columns = 5;
-  const int rows = 15;
-  const int min_gap = 3;
-  const int max_grid_w = w - 24;
-  const int max_grid_h = h - 172;
-  int square = (max_grid_h - (rows - 1) * min_gap) / rows;
-  const int square_by_w = max_grid_w / columns;
-  if (square > square_by_w) square = square_by_w;
-  if (square > 7) square -= 3;
-  else if (square > 5) square -= 2;
-  if (square < 4) square = 4;
-  int gap_x = columns > 1 ? (max_grid_w - columns * square) / (columns - 1) : 0;
-  if (gap_x < min_gap) gap_x = min_gap;
-  const int gap_y = min_gap;
-  const int grid_h = rows * square + (rows - 1) * gap_y;
-  const int grid_x = x + 12;
-  const int grid_y = y + 132 + (max_grid_h - grid_h) / 2;
-  const int clamped_day = current_day < 1 ? 1 : (current_day > 75 ? 75 : current_day);
-
-  for (int day = 1; day <= 75; day++) {
-    const int index = day - 1;
-    const int column = index % columns;
-    const int row = index / columns;
-    const int cell_x = grid_x + column * (square + gap_x);
-    const int cell_y = grid_y + row * (square + gap_y);
-    const int completed = day <= clamped_day;
-    const int current = day == clamped_day;
-    if (completed) {
-      fillRect(canvas, cell_x, cell_y, square, square, 0);
-    } else {
-      fillRect(canvas, cell_x, cell_y, square, square, current ? 212 : 244);
-      strokeRect(canvas, cell_x, cell_y, square, square, current ? 2 : 1, 0);
+void drawHeartIcon(Canvas* canvas, int x, int y, int scale) {
+  static const char* mask[] = {
+    ".##....##.",
+    "####..####",
+    "##########",
+    "##########",
+    ".########.",
+    ".########.",
+    "..######..",
+    "..######..",
+    "...####...",
+    "....##....",
+    "....##...."
+  };
+  for (int row = 0; row < 11; row++) {
+    for (int col = 0; mask[row][col]; col++) {
+      if (mask[row][col] == '#') fillRect(canvas, x + col * scale, y + row * scale, scale, scale, 0);
     }
   }
-
-  drawTextCentered(canvas, x + w / 2, y + h - 38, w - 24, "75 MEDIUM", 2, 0);
-}
-
-void drawImageCard(Canvas* canvas, int x, int y, int w, int h, const char* image_path, const char* fallback_path) {
-  strokeRect(canvas, x, y, w, h, 2, 0);
-  drawPgmImageCover(canvas, x + 2, y + 2, w - 4, h - 4, image_path, fallback_path, framebufferInvertForVisibleImage(1));
 }
 
 void drawListCard(Canvas* canvas, int x, int y, int w, int h, const List* list, int list_index) {
-  strokeRect(canvas, x, y, w, h, 3, 0);
+  const int card_radius = 22;
+  strokeRoundedRect(canvas, x, y, w, h, card_radius, 3, 0);
   Rect card_rect = {x, y, w, h};
   addTouchRegion(card_rect, kTouchOpenList, list_index, -1, "", 0);
 
   const char* title = displayListTitleForIndex(list, list_index);
-  fprintf(stderr, "render=list-card-header index=%d title=%s rect=%d,%d,%d,%d\n", list_index, title, x, y, w, h);
 
   if (h < 112) {
     drawTextCentered(canvas, x + w / 2, y + 14, w - 24, title, 4, 0);
     line(canvas, x + 10, y + 52, x + w - 10, y + 52, 2, 0);
     if (list->item_count > 0) {
-      char row[128];
+      const int box_size = 20;
+      drawCheckbox(canvas, x + 18, y + 68, box_size, list->items[0].done);
       char item_text[96];
       upperCopy(item_text, sizeof(item_text), list->items[0].text);
-      snprintf(row, sizeof(row), "%s %.52s", list->items[0].done ? "[X]" : "[ ]", item_text);
-      drawTextClipped(canvas, x + 18, y + 66, w - 36, row, 2, 0);
+      drawTextClipped(canvas, x + 18 + box_size + 8, y + 66, w - 36 - box_size - 8, item_text, 2, 0);
     } else {
       drawTextCentered(canvas, x + w / 2, y + 66, w - 36, "NO ITEMS", 2, 0);
     }
@@ -1413,12 +1125,13 @@ void drawListCard(Canvas* canvas, int x, int y, int w, int h, const List* list, 
   const int max_preview_rows = list_index == 1 ? 8 : 5;
   if (row_capacity > max_preview_rows) row_capacity = max_preview_rows;
   const int shown = list->item_count > row_capacity ? row_capacity : list->item_count;
+  const int box_size = 26;
   for (int i = 0; i < shown; i++) {
-    char row[128];
+    const int row_y = y + 74 + i * 42;
+    drawCheckbox(canvas, x + 18, row_y + 3, box_size, list->items[i].done);
     char item_text[96];
     upperCopy(item_text, sizeof(item_text), list->items[i].text);
-    snprintf(row, sizeof(row), "%s %.52s", list->items[i].done ? "[X]" : "[ ]", item_text);
-    drawTextClipped(canvas, x + 18, y + 74 + i * 42, w - 36, row, 3, 0);
+    drawTextClipped(canvas, x + 18 + box_size + 10, row_y, w - 36 - box_size - 10, item_text, 3, 0);
   }
   if (list->item_count > shown && h >= 190) {
     char more[48];
@@ -1427,100 +1140,88 @@ void drawListCard(Canvas* canvas, int x, int y, int w, int h, const List* list, 
   }
   if (h >= 160) {
     const int hint_scale = h < 172 ? 2 : 3;
-    drawTextCentered(canvas, x + w / 2, y + h - 34, w - 24, "[ TAP TO OPEN ]", hint_scale, 0);
+    const char* hint = "TAP TO OPEN";
+    const int icon_w = 10 * hint_scale;
+    const int hint_gap = 8;
+    const int total_w = icon_w + hint_gap + textWidth(hint, hint_scale);
+    const int hint_y = y + h - 34;
+    const int start_x = x + w / 2 - total_w / 2;
+    drawHeartIcon(canvas, start_x, hint_y - 2 * hint_scale, hint_scale);
+    drawText(canvas, start_x + icon_w + hint_gap, hint_y, hint, hint_scale, 0);
   }
 }
 
-void drawMealPlannerTile(Canvas* canvas, int x, int y, int w, int h) {
-  strokeRect(canvas, x, y, w, h, 3, 0);
+void drawCookbookTile(Canvas* canvas, int x, int y, int w, int h) {
+  const int tile_radius = 22;
+  strokeRoundedRect(canvas, x, y, w, h, tile_radius, 3, 0);
   Rect tile_rect = {x, y, w, h};
-  addTouchRegion(tile_rect, kTouchOpenMealPlanner, -1, -1, "", 0);
-  drawPgmImageCover(canvas, x + 3, y + 3, w - 6, h - 6, kMealCoverPath, kMealCoverLocalPath, framebufferInvertForVisibleImage(0));
-  fillRect(canvas, x + 3, y + 3, w - 6, 50, 255);
-  line(canvas, x + 10, y + 53, x + w - 10, y + 53, 2, 0);
-  drawTextCentered(canvas, x + w / 2, y + 14, w - 24, "MEAL PLANNER", 4, 0);
-}
+  addTouchRegion(tile_rect, kTouchOpenRecipes, -1, -1, "", 0);
+  line(canvas, x + 10, y + 52, x + w - 10, y + 52, 2, 0);
+  drawTextCentered(canvas, x + w / 2, y + 14, w - 24, "COOKBOOK", 4, 0);
 
-void drawChallengeTile(Canvas* canvas, int x, int y, int size) {
-  strokeRect(canvas, x, y, size, size, 3, 0);
-  Rect tile_rect = {x, y, size, size};
-  addTouchRegion(tile_rect, kTouchOpenChallenge, -1, -1, "", 0);
-  const int art_x = x + 3;
-  const int art_y = y + 3;
-  const int art_w = size - 6;
-  const int art_h = size - 6;
-  if (art_h > 24) {
-    drawPgmImageCover(canvas, art_x, art_y, art_w, art_h, kChallengeCoverPath, kChallengeCoverLocalPath, framebufferInvertForVisibleImage(0));
+  const int icon_cx = x + w / 2;
+  const int available_top = y + 66;
+  const int available_bottom = y + h - 40;
+  const int available_h = available_bottom - available_top;
+  if (available_h > 60) {
+    const int max_half_w = w / 2 - 30;
+    int icon_h = available_h < 120 ? available_h : 120;
+    int half_w = icon_h * 3 / 4;
+    if (half_w > max_half_w) half_w = max_half_w;
+    if (half_w < 30) half_w = 30;
+    const int icon_top = available_top + (available_h - icon_h) / 2;
+    const int icon_bottom = icon_top + icon_h;
+    line(canvas, icon_cx, icon_top, icon_cx, icon_bottom, 2, 0);
+    line(canvas, icon_cx, icon_top + 6, icon_cx - half_w, icon_top + 18, 2, 0);
+    line(canvas, icon_cx - half_w, icon_top + 18, icon_cx - half_w, icon_bottom - 10, 2, 0);
+    line(canvas, icon_cx - half_w, icon_bottom - 10, icon_cx, icon_bottom - 2, 2, 0);
+    line(canvas, icon_cx, icon_top + 6, icon_cx + half_w, icon_top + 18, 2, 0);
+    line(canvas, icon_cx + half_w, icon_top + 18, icon_cx + half_w, icon_bottom - 10, 2, 0);
+    line(canvas, icon_cx + half_w, icon_bottom - 10, icon_cx, icon_bottom - 2, 2, 0);
+    const int rows = (icon_h - 30) / 18;
+    for (int i = 0; i < rows && i < 4; i++) {
+      const int tick_y = icon_top + 26 + i * 18;
+      line(canvas, icon_cx - half_w + 8, tick_y, icon_cx - 8, tick_y, 1, 0);
+      line(canvas, icon_cx + 8, tick_y, icon_cx + half_w - 8, tick_y, 1, 0);
+    }
   }
-}
-
-void drawChevron(Canvas* canvas, const Rect& rect, int direction) {
-  const int cx = rect.x + rect.w / 2;
-  const int cy = rect.y + rect.h / 2;
-  const int half_w = 10;
-  const int half_h = 14;
-  if (direction < 0) {
-    line(canvas, cx + half_w, cy - half_h, cx - half_w, cy, 5, 0);
-    line(canvas, cx - half_w, cy, cx + half_w, cy + half_h, 5, 0);
-  } else {
-    line(canvas, cx - half_w, cy - half_h, cx + half_w, cy, 5, 0);
-    line(canvas, cx + half_w, cy, cx - half_w, cy + half_h, 5, 0);
-  }
-}
-
-int drawDaySwitchArrows(Canvas* canvas, int shell_x, int shell_y, int shell_w) {
-  (void)shell_w;
-  const int button_w = 64;
-  const int today_w = 118;
-  const int button_h = 52;
-  const int gap = 12;
-  Rect exit_rect = exitButtonRectForScreen(canvas->width, canvas->height);
-  Rect next_rect = {exit_rect.x - 104 - button_w, shell_y + 28, button_w, button_h};
-  Rect today_rect = {next_rect.x - gap - today_w, shell_y + 28, today_w, button_h};
-  Rect prev_rect = {today_rect.x - gap - button_w, shell_y + 28, button_w, button_h};
-  if (prev_rect.x < shell_x + 320) {
-    prev_rect.x = shell_x + 320;
-    today_rect.x = prev_rect.x + button_w + gap;
-    next_rect.x = today_rect.x + today_w + gap;
-  }
-
-  strokeRect(canvas, prev_rect.x, prev_rect.y, prev_rect.w, prev_rect.h, 2, 0);
-  drawChevron(canvas, prev_rect, -1);
-  addTouchRegion(prev_rect, kTouchPreviousDay, -1, -1, "", 0);
-
-  strokeRect(canvas, today_rect.x, today_rect.y, today_rect.w, today_rect.h, 2, 0);
-  drawTextCentered(canvas, today_rect.x + today_rect.w / 2, today_rect.y + 16, today_rect.w - 12, "TODAY", 2, 0);
-  addTouchRegion(today_rect, kTouchToday, -1, -1, "", 0);
-
-  strokeRect(canvas, next_rect.x, next_rect.y, next_rect.w, next_rect.h, 2, 0);
-  drawChevron(canvas, next_rect, 1);
-  addTouchRegion(next_rect, kTouchNextDay, -1, -1, "", 0);
-
-  return prev_rect.x;
 }
 
 void drawTopHeader(Canvas* canvas, const Dashboard* dashboard, const char* status, int shell_x, int shell_y, int shell_w) {
   const int header_h = 132;
-  doubleRect(canvas, shell_x + 10, shell_y + 10, shell_w - 20, header_h, 0);
-  const int arrow_left = drawDaySwitchArrows(canvas, shell_x, shell_y, shell_w);
-  drawTextClipped(canvas, shell_x + 28, shell_y + 24, arrow_left - shell_x - 44, "DAILY OPS", 4, 0);
+  doubleRoundedRect(canvas, shell_x + 10, shell_y + 10, shell_w - 20, header_h, 26, 0);
 
   Rect exit_rect = exitButtonRectForScreen(canvas->width, canvas->height);
+  const int refresh_w = 150;
+  const int refresh_gap = 16;
+  Rect refresh_rect = {exit_rect.x - refresh_gap - refresh_w, exit_rect.y, refresh_w, exit_rect.h};
+
+  drawTextClipped(canvas, shell_x + 28, shell_y + 24, refresh_rect.x - shell_x - 44, "HOME SWEET HOME", 4, 0);
+
   Rect exit_hit_rect = {exit_rect.x - 20, kKindleStatusBarHeight, exit_rect.w + 40, exit_rect.y - kKindleStatusBarHeight + exit_rect.h + 20};
-  strokeRect(canvas, exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 2, 0);
+  strokeRoundedRect(canvas, exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 18, 2, 0);
   drawTextCentered(canvas, exit_rect.x + exit_rect.w / 2, exit_rect.y + 34, exit_rect.w - 16, "EXIT", 3, 0);
   addTouchRegion(exit_hit_rect, kTouchExit, -1, -1, "", 0);
   addTouchRegion(exit_rect, kTouchExit, -1, -1, "", 0);
 
-  line(canvas, shell_x + 20, shell_y + 88, exit_rect.x - 8, shell_y + 88, 2, 0);
+  strokeRoundedRect(canvas, refresh_rect.x, refresh_rect.y, refresh_rect.w, refresh_rect.h, 18, 2, 0);
+  const int refresh_icon_cx = refresh_rect.x + refresh_rect.w / 2;
+  const int refresh_icon_cy = refresh_rect.y + 30;
+  circleRing(canvas, refresh_icon_cx, refresh_icon_cy, 16, 4, 78, 0);
+  line(canvas, refresh_icon_cx - 4, refresh_icon_cy - 20, refresh_icon_cx + 9, refresh_icon_cy - 15, 3, 0);
+  line(canvas, refresh_icon_cx + 9, refresh_icon_cy - 15, refresh_icon_cx + 1, refresh_icon_cy - 4, 3, 0);
+  drawTextCentered(canvas, refresh_icon_cx, refresh_rect.y + refresh_rect.h - 30, refresh_rect.w - 16, "REFRESH", 2, 0);
+  addTouchRegion(refresh_rect, kTouchRefresh, -1, -1, "", 0);
+
+  line(canvas, shell_x + 20, shell_y + 88, refresh_rect.x - 8, shell_y + 88, 2, 0);
   char updated[96];
   formatDisplayDate(dashboard->generated_at, status, updated, sizeof(updated));
-  drawTextClipped(canvas, shell_x + 28, shell_y + 102, exit_rect.x - shell_x - 44, updated, 2, 0);
+  drawTextClipped(canvas, shell_x + 28, shell_y + 102, refresh_rect.x - shell_x - 44, updated, 2, 0);
 }
 
 void drawSubHeader(Canvas* canvas, int shell_x, int y, int shell_w, const char* title) {
   const int list_header_h = 80;
-  doubleRect(canvas, shell_x + 10, y, shell_w - 20, list_header_h, 0);
+  doubleRoundedRect(canvas, shell_x + 10, y, shell_w - 20, list_header_h, 20, 0);
   const int title_w = shell_w - 310;
   const int title_scale = textWidth(title, 5) <= title_w ? 5 : (textWidth(title, 4) <= title_w ? 4 : 3);
   const int title_y = y + (title_scale == 5 ? 22 : (title_scale == 4 ? 26 : 30));
@@ -1528,77 +1229,13 @@ void drawSubHeader(Canvas* canvas, int shell_x, int y, int shell_w, const char* 
 
   Rect back_rect = {shell_x + shell_w - 136, y + 14, 104, 52};
   Rect home_rect = {back_rect.x - 116, y + 14, 104, 52};
-  strokeRect(canvas, home_rect.x, home_rect.y, home_rect.w, home_rect.h, 2, 0);
+  strokeRoundedRect(canvas, home_rect.x, home_rect.y, home_rect.w, home_rect.h, 14, 2, 0);
   drawTextCentered(canvas, home_rect.x + home_rect.w / 2, home_rect.y + 16, home_rect.w - 12, "HOME", 2, 0);
   addTouchRegion(home_rect, kTouchHome, -1, -1, "", 0);
 
-  strokeRect(canvas, back_rect.x, back_rect.y, back_rect.w, back_rect.h, 2, 0);
+  strokeRoundedRect(canvas, back_rect.x, back_rect.y, back_rect.w, back_rect.h, 14, 2, 0);
   drawTextCentered(canvas, back_rect.x + back_rect.w / 2, back_rect.y + 16, back_rect.w - 12, "BACK", 2, 0);
   addTouchRegion(back_rect, kTouchBack, -1, -1, "", 0);
-}
-
-void drawMealPlannerDashboard(Canvas* canvas, const Dashboard* dashboard, const char* status) {
-  clearCanvas(canvas, 255);
-  clearTouchRegions();
-  g_last_screen_width = canvas->width;
-  g_last_screen_height = canvas->height;
-  const int shell_w = canvas->width;
-  const int shell_x = 0;
-  const int shell_y = kKindleStatusBarHeight;
-  const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
-  drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
-
-  const int sub_y = shell_y + 10 + 132 + 8;
-  drawSubHeader(canvas, shell_x, sub_y, shell_w, "MEAL PLANNER");
-
-  const int cover_y = sub_y + 96;
-  strokeRect(canvas, shell_x + 18, cover_y, shell_w - 36, 188, 3, 0);
-  drawPgmImageCover(canvas, shell_x + 42, cover_y + 18, 250, 140, kMealCoverPath, kMealCoverLocalPath, framebufferInvertForVisibleImage(0));
-  drawTextClipped(canvas, shell_x + 320, cover_y + 32, shell_w - 352, "TODAY'S MEALS", 5, 0);
-  drawTextClipped(canvas, shell_x + 320, cover_y + 84, shell_w - 352, "EACH ROW OPENS", 3, 0);
-  drawTextClipped(canvas, shell_x + 320, cover_y + 118, shell_w - 352, "A RECIPE CARD", 3, 0);
-
-  const int recipes_card_y = cover_y + 206;
-  Rect recipes_rect = {shell_x + 18, recipes_card_y, shell_w - 36, 74};
-  strokeRect(canvas, recipes_rect.x, recipes_rect.y, recipes_rect.w, recipes_rect.h, 3, 0);
-  addTouchRegion(recipes_rect, kTouchOpenRecipes, -1, -1, "", 0);
-  drawTextClipped(canvas, recipes_rect.x + 20, recipes_rect.y + 18, recipes_rect.w - 260, "RECIPES", 5, 0);
-  char count_text[64];
-  snprintf(count_text, sizeof(count_text), "%d SAVED", dashboard->recipe_count);
-  drawTextClipped(canvas, recipes_rect.x + recipes_rect.w - 210, recipes_rect.y + 24, 180, count_text, 3, 0);
-
-  const int row_x = shell_x + 18;
-  const int row_w = shell_w - 36;
-  const int row_h = 82;
-  const int row_gap = 10;
-  const int first_y = recipes_card_y + 92;
-  if (dashboard->meal_plan_count == 0) {
-    Rect empty_rect = {row_x, first_y, row_w, 118};
-    strokeRect(canvas, empty_rect.x, empty_rect.y, empty_rect.w, empty_rect.h, 2, 0);
-    drawTextClipped(canvas, empty_rect.x + 18, empty_rect.y + 22, empty_rect.w - 36, "NO MEALS PLANNED", 4, 0);
-    drawTextClipped(canvas, empty_rect.x + 18, empty_rect.y + 66, empty_rect.w - 36, "SET TODAY'S MEAL PLAN VIA TELEGRAM", 2, 0);
-    return;
-  }
-  for (int i = 0; i < dashboard->meal_plan_count; i++) {
-    const int row_y = first_y + i * (row_h + row_gap);
-    if (row_y + row_h > shell_y + shell_h - 18) break;
-    const int recipe_index = dashboard->meal_plan_recipe_indices[i];
-    if (recipe_index < 0 || recipe_index >= dashboard->recipe_count) continue;
-    const RecipeRecord* recipe = &dashboard->recipes[recipe_index];
-    Rect row_rect = {row_x, row_y, row_w, row_h};
-    strokeRect(canvas, row_rect.x, row_rect.y, row_rect.w, row_rect.h, 2, 0);
-    addTouchRegion(row_rect, kTouchOpenMealPlanRecipe, -1, recipe_index, "", 0);
-    char meal_label[32];
-    snprintf(meal_label, sizeof(meal_label), "MEAL %d", i + 1);
-    drawTextClipped(canvas, row_x + 18, row_y + 14, 170, meal_label, 3, 0);
-    drawTextClipped(canvas, row_x + 208, row_y + 14, row_w - 360, recipe->title, 4, 0);
-    char macro_hint[96];
-    snprintf(macro_hint, sizeof(macro_hint), "%d CAL  C%d F%d P%d", recipe->calories, recipe->carbs, recipe->fat, recipe->protein);
-    drawTextClipped(canvas, row_x + 208, row_y + 52, row_w - 390, macro_hint, 2, 0);
-    drawStarRating(canvas, row_x + row_w - 190, row_y + 16, recipe->rating_tenths, 2);
-    drawTextClipped(canvas, row_x + row_w - 176, row_y + 52, 154, "[ RECIPE ]", 2, 0);
-  }
 }
 
 void drawRecipesDashboard(Canvas* canvas, const Dashboard* dashboard, const char* status) {
@@ -1610,7 +1247,7 @@ void drawRecipesDashboard(Canvas* canvas, const Dashboard* dashboard, const char
   const int shell_x = 0;
   const int shell_y = kKindleStatusBarHeight;
   const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
+  strokeRoundedRect(canvas, shell_x, shell_y, shell_w, shell_h, 24, 3, 0);
   drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
 
   const int sub_y = shell_y + 10 + 132 + 8;
@@ -1627,7 +1264,7 @@ void drawRecipesDashboard(Canvas* canvas, const Dashboard* dashboard, const char
     const int card_y = first_y + row * (card_h + gap);
     if (card_y + card_h > shell_y + shell_h - 18) break;
     Rect card_rect = {card_x, card_y, card_w, card_h};
-    strokeRect(canvas, card_rect.x, card_rect.y, card_rect.w, card_rect.h, 3, 0);
+    strokeRoundedRect(canvas, card_rect.x, card_rect.y, card_rect.w, card_rect.h, 16, 3, 0);
     addTouchRegion(card_rect, kTouchOpenRecipe, -1, i, "", 0);
     drawTextClipped(canvas, card_x + 14, card_y + 14, card_w - 28, dashboard->recipes[i].title, 3, 0);
     line(canvas, card_x + 10, card_y + 54, card_x + card_w - 10, card_y + 54, 2, 0);
@@ -1635,7 +1272,8 @@ void drawRecipesDashboard(Canvas* canvas, const Dashboard* dashboard, const char
     snprintf(macro_text, sizeof(macro_text), "%d CAL C%d F%d P%d", dashboard->recipes[i].calories, dashboard->recipes[i].carbs, dashboard->recipes[i].fat, dashboard->recipes[i].protein);
     drawTextClipped(canvas, card_x + 14, card_y + 72, card_w - 28, macro_text, 2, 0);
     drawStarRating(canvas, card_x + 14, card_y + 102, dashboard->recipes[i].rating_tenths, 1);
-    drawTextClipped(canvas, card_x + card_w - 94, card_y + 104, 78, "[ OPEN ]", 2, 0);
+    drawHeartIcon(canvas, card_x + card_w - 92, card_y + 98, 2);
+    drawText(canvas, card_x + card_w - 70, card_y + 104, "OPEN", 2, 0);
   }
 }
 
@@ -1648,7 +1286,7 @@ void drawRecipeRecordDashboard(Canvas* canvas, const Dashboard* dashboard, const
   const int shell_x = 0;
   const int shell_y = kKindleStatusBarHeight;
   const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
+  strokeRoundedRect(canvas, shell_x, shell_y, shell_w, shell_h, 24, 3, 0);
   drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
 
   if (recipe_index < 0 || recipe_index >= dashboard->recipe_count) recipe_index = 0;
@@ -1660,7 +1298,7 @@ void drawRecipeRecordDashboard(Canvas* canvas, const Dashboard* dashboard, const
   const int card_y = sub_y + 98;
   const int card_w = shell_w - 36;
   const int card_h = shell_y + shell_h - card_y - 18;
-  strokeRect(canvas, card_x, card_y, card_w, card_h, 3, 0);
+  strokeRoundedRect(canvas, card_x, card_y, card_w, card_h, 20, 3, 0);
   drawTextClipped(canvas, card_x + 20, card_y + 22, card_w - 40, recipe->title, 5, 0);
   line(canvas, card_x + 14, card_y + 76, card_x + card_w - 14, card_y + 76, 2, 0);
   drawTextClipped(canvas, card_x + 20, card_y + 86, 126, "RATING", 3, 0);
@@ -1674,7 +1312,7 @@ void drawRecipeRecordDashboard(Canvas* canvas, const Dashboard* dashboard, const
   const int photo_h = photo_w;
   const int macro_x = content_x + photo_w + column_gap;
   const int macro_w = content_w - photo_w - column_gap;
-  strokeRect(canvas, content_x, top_y, photo_w, photo_h, 2, 0);
+  strokeRoundedRect(canvas, content_x, top_y, photo_w, photo_h, 14, 2, 0);
   drawRecipeLocalImage(canvas, content_x + 8, top_y + 8, photo_w - 16, photo_h - 16, recipe);
 
   const int macro_gap = 8;
@@ -1687,7 +1325,7 @@ void drawRecipeRecordDashboard(Canvas* canvas, const Dashboard* dashboard, const
     const int row = i / 2;
     const int box_x = macro_x + column * (macro_box_w + macro_gap);
     const int box_y = top_y + row * (macro_box_h + macro_gap);
-    strokeRect(canvas, box_x, box_y, macro_box_w, macro_box_h, 2, 0);
+    strokeRoundedRect(canvas, box_x, box_y, macro_box_w, macro_box_h, 12, 2, 0);
     drawTextCentered(canvas, box_x + macro_box_w / 2, box_y + 22, macro_box_w - 8, labels[i], 2, 0);
     char value_text[24];
     snprintf(value_text, sizeof(value_text), i == 0 ? "%d" : "%dG", values[i]);
@@ -1714,80 +1352,6 @@ void drawRecipeRecordDashboard(Canvas* canvas, const Dashboard* dashboard, const
   }
 }
 
-void drawRecipeDashboard(Canvas* canvas, const Dashboard* dashboard, const char* status, int recipe_index) {
-  clearCanvas(canvas, 255);
-  clearTouchRegions();
-  g_last_screen_width = canvas->width;
-  g_last_screen_height = canvas->height;
-  const int shell_w = canvas->width;
-  const int shell_x = 0;
-  const int shell_y = kKindleStatusBarHeight;
-  const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
-  drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
-
-  if (recipe_index < 0 || recipe_index >= kMealPlanCount) recipe_index = 0;
-  const MealPlanEntry* meal = &kMealPlan[recipe_index];
-  const int sub_y = shell_y + 10 + 132 + 8;
-  drawSubHeader(canvas, shell_x, sub_y, shell_w, "RECIPE");
-
-  const int card_x = shell_x + 18;
-  const int card_y = sub_y + 98;
-  const int card_w = shell_w - 36;
-  const int card_h = shell_y + shell_h - card_y - 18;
-  strokeRect(canvas, card_x, card_y, card_w, card_h, 3, 0);
-  drawTextClipped(canvas, card_x + 20, card_y + 22, card_w - 40, meal->title, 5, 0);
-  line(canvas, card_x + 14, card_y + 76, card_x + card_w - 14, card_y + 76, 2, 0);
-  drawTextClipped(canvas, card_x + 20, card_y + 92, card_w - 40, meal->recipe, 3, 0);
-
-  const int content_x = card_x + 20;
-  const int content_w = card_w - 40;
-  const int top_y = card_y + 142;
-  const int column_gap = 14;
-  const int photo_w = (content_w - column_gap) / 2;
-  const int photo_h = photo_w;
-  const int macro_x = content_x + photo_w + column_gap;
-  const int macro_w = content_w - photo_w - column_gap;
-  strokeRect(canvas, content_x, top_y, photo_w, photo_h, 2, 0);
-  drawPgmImageCover(canvas, content_x + 8, top_y + 8, photo_w - 16, photo_h - 16, meal->photo_path, meal->photo_fallback_path, framebufferInvertForVisibleImage(1));
-
-  const int macro_gap = 8;
-  const int macro_box_h = (photo_h - macro_gap) / 2;
-  const int macro_box_w = (macro_w - macro_gap) / 2;
-  const char* labels[4] = {"CAL", "CARBS", "FAT", "PROT"};
-  const int values[4] = {meal->calories, meal->carbs, meal->fat, meal->protein};
-  for (int i = 0; i < 4; i++) {
-    const int column = i % 2;
-    const int row = i / 2;
-    const int box_x = macro_x + column * (macro_box_w + macro_gap);
-    const int box_y = top_y + row * (macro_box_h + macro_gap);
-    strokeRect(canvas, box_x, box_y, macro_box_w, macro_box_h, 2, 0);
-    drawTextCentered(canvas, box_x + macro_box_w / 2, box_y + 22, macro_box_w - 8, labels[i], 2, 0);
-    char value_text[24];
-    snprintf(value_text, sizeof(value_text), i == 0 ? "%d" : "%dG", values[i]);
-    drawTextCentered(canvas, box_x + macro_box_w / 2, box_y + 64, macro_box_w - 8, value_text, 4, 0);
-  }
-
-  const int ingredients_title_y = top_y + photo_h + 28;
-  drawTextClipped(canvas, content_x, ingredients_title_y, content_w, "INGREDIENTS", 3, 0);
-  const int ingredient_y = ingredients_title_y + 42;
-  const int ingredient_row_h = 38;
-  const int amount_w = 160;
-  int ingredients_shown = 0;
-  for (int i = 0; i < meal->ingredient_count && i < kMaxRecipeIngredients; i++) {
-    const int row_y = ingredient_y + i * ingredient_row_h;
-    if (row_y + ingredient_row_h > card_y + card_h - 122) break;
-    drawTextClipped(canvas, card_x + 24, row_y, card_w - amount_w - 52, meal->ingredients[i].name, 3, 0);
-    drawTextClipped(canvas, card_x + card_w - amount_w - 20, row_y, amount_w, meal->ingredients[i].amount, 3, 0);
-    ingredients_shown++;
-  }
-  const int steps_y = ingredient_y + ingredients_shown * ingredient_row_h + 24;
-  if (steps_y + 68 < card_y + card_h) {
-    drawTextClipped(canvas, content_x, steps_y, content_w, "STEPS", 3, 0);
-    drawTextWrapped(canvas, content_x, steps_y + 44, content_w, meal->steps, 3, 0, 3);
-  }
-}
-
 void drawFullListDashboard(Canvas* canvas, const Dashboard* dashboard, int list_index, const char* status) {
   clearCanvas(canvas, 255);
   clearTouchRegions();
@@ -1797,7 +1361,7 @@ void drawFullListDashboard(Canvas* canvas, const Dashboard* dashboard, int list_
   const int shell_x = 0;
   const int shell_y = kKindleStatusBarHeight;
   const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
+  strokeRoundedRect(canvas, shell_x, shell_y, shell_w, shell_h, 24, 3, 0);
 
   if (list_index < 0 || list_index >= dashboard->list_count) list_index = 0;
   const List* list = &dashboard->lists[list_index];
@@ -1817,74 +1381,26 @@ void drawFullListDashboard(Canvas* canvas, const Dashboard* dashboard, int list_
   const int first_y = list_header_y + list_header_h + 18;
   const int max_rows = (shell_y + shell_h - first_y - 24) / (row_h + row_gap);
   const int shown = list->item_count < max_rows ? list->item_count : max_rows;
+  const int box_size = 30;
   for (int i = 0; i < shown; i++) {
     const int row_y = first_y + i * (row_h + row_gap);
     Rect row_rect = {row_x, row_y, row_w, row_h};
-    strokeRect(canvas, row_rect.x, row_rect.y, row_rect.w, row_rect.h, 2, 0);
+    strokeRoundedRect(canvas, row_rect.x, row_rect.y, row_rect.w, row_rect.h, 14, 2, 0);
     addTouchRegion(row_rect, kTouchToggleItem, list_index, i, list->items[i].id, list->items[i].done);
-    char row[160];
+    drawCheckbox(canvas, row_x + 18, row_y + (row_h - box_size) / 2, box_size, list->items[i].done);
     char item_text[96];
     upperCopy(item_text, sizeof(item_text), list->items[i].text);
-    snprintf(row, sizeof(row), "%s %.46s", list->items[i].done ? "[X]" : "[ ]", item_text);
-    drawTextClipped(canvas, row_x + 18, row_y + 20, row_w - 36, row, 3, 0);
+    drawTextClipped(canvas, row_x + 18 + box_size + 14, row_y + 20, row_w - 36 - box_size - 14, item_text, 3, 0);
   }
-}
-
-void drawChallengeDashboard(Canvas* canvas, const Dashboard* dashboard, const char* status) {
-  clearCanvas(canvas, 255);
-  clearTouchRegions();
-  g_last_screen_width = canvas->width;
-  g_last_screen_height = canvas->height;
-  const int shell_w = canvas->width;
-  const int shell_x = 0;
-  const int shell_y = kKindleStatusBarHeight;
-  const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
-  drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
-
-  const int sub_y = shell_y + 10 + 132 + 8;
-  drawSubHeader(canvas, shell_x, sub_y, shell_w, "75 DAY CHALLENGE");
-  char day_text[40];
-  snprintf(day_text, sizeof(day_text), "DAY %d // CURRENT DAY", dashboard->challenge_day);
-  drawTextClipped(canvas, shell_x + 36, sub_y + 88, shell_w - 72, day_text, 3, 0);
-
-  const int gap = 10;
-  const int content_x = shell_x + 18;
-  const int content_y = sub_y + 132;
-  const int content_w = shell_w - 36;
-  const int content_h = shell_y + shell_h - content_y - 18;
-  const int center_w = (content_w - gap * 2) / 4;
-  const int side_w = (content_w - center_w - gap * 2) / 2;
-  const int left_x = content_x;
-  const int center_x = left_x + side_w + gap;
-  const int right_x = center_x + center_w + gap;
-  const int card_h = (content_h - gap * 2) / 3;
-
-  drawRadialMetric(canvas, left_x, content_y, side_w, card_h, "PROTEIN", dashboard->protein_g, 100, "g");
-  drawRadialMetricTenths(canvas, left_x, content_y + card_h + gap, side_w, card_h, "WATER", dashboard->water_tenths, dashboard->water_target_tenths, "L");
-  drawRadialMetricTenths(canvas, left_x, content_y + (card_h + gap) * 2, side_w, card_h, "SLEEP", dashboard->sleep_tenths, dashboard->sleep_target_tenths, "h");
-  drawChallengeStreakCard(canvas, center_x, content_y, center_w, content_h, dashboard->challenge_day);
-  drawRadialMetric(canvas, right_x, content_y, side_w, card_h, "WORKOUT", dashboard->workouts, dashboard->workout_target, "done");
-  drawRadialMetric(canvas, right_x, content_y + card_h + gap, side_w, card_h, "STEPS", dashboard->steps, dashboard->steps_target, dashboard->steps_unit);
-  drawRadialMetric(canvas, right_x, content_y + (card_h + gap) * 2, side_w, card_h, "CALORIES", dashboard->calories, dashboard->calories_target, dashboard->calories_unit);
 }
 
 void drawCurrentDashboard(Canvas* canvas, const Dashboard* dashboard, const char* status) {
-  if (g_active_challenge) {
-    drawChallengeDashboard(canvas, dashboard, status);
-    return;
-  }
   if (g_active_recipe >= 0) {
-    if (g_active_recipe_library) drawRecipeRecordDashboard(canvas, dashboard, status, g_active_recipe);
-    else drawRecipeDashboard(canvas, dashboard, status, g_active_recipe);
+    drawRecipeRecordDashboard(canvas, dashboard, status, g_active_recipe);
     return;
   }
   if (g_active_recipes) {
     drawRecipesDashboard(canvas, dashboard, status);
-    return;
-  }
-  if (g_active_meal_planner) {
-    drawMealPlannerDashboard(canvas, dashboard, status);
     return;
   }
   if (g_active_list >= 0 && g_active_list < dashboard->list_count) {
@@ -1954,57 +1470,32 @@ void drawBitmapDashboard(Canvas* canvas, const Dashboard* dashboard, const char*
   const int shell_x = 0;
   const int shell_y = kKindleStatusBarHeight;
   const int shell_h = canvas->height - shell_y;
-  strokeRect(canvas, shell_x, shell_y, shell_w, shell_h, 3, 0);
+  strokeRoundedRect(canvas, shell_x, shell_y, shell_w, shell_h, 24, 3, 0);
 
-  const int header_h = 132;
-  doubleRect(canvas, shell_x + 10, shell_y + 10, shell_w - 20, header_h, 0);
-  const int arrow_left = drawDaySwitchArrows(canvas, shell_x, shell_y, shell_w);
-  drawTextClipped(canvas, shell_x + 28, shell_y + 24, arrow_left - shell_x - 44, "DAILY OPS", 4, 0);
-  Rect exit_rect = exitButtonRectForScreen(canvas->width, canvas->height);
-  Rect exit_hit_rect = {exit_rect.x - 20, kKindleStatusBarHeight, exit_rect.w + 40, exit_rect.y - kKindleStatusBarHeight + exit_rect.h + 20};
-  strokeRect(canvas, exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 2, 0);
-  drawTextCentered(canvas, exit_rect.x + exit_rect.w / 2, exit_rect.y + 34, exit_rect.w - 16, "EXIT", 3, 0);
-  addTouchRegion(exit_hit_rect, kTouchExit, -1, -1, "", 0);
-  addTouchRegion(exit_rect, kTouchExit, -1, -1, "", 0);
-  line(canvas, shell_x + 20, shell_y + 88, exit_rect.x - 8, shell_y + 88, 2, 0);
-  char updated[96];
-  formatDisplayDate(dashboard->generated_at, status, updated, sizeof(updated));
-  drawTextClipped(canvas, shell_x + 28, shell_y + 102, exit_rect.x - shell_x - 44, updated, 2, 0);
+  drawTopHeader(canvas, dashboard, status, shell_x, shell_y, shell_w);
 
   const int gap = 8;
-  const int stat_y = shell_y + 10 + header_h + gap;
-  const int stat_h = shell_h < 900 ? 220 : 252;
-  const int stat_w = (shell_w - 20 - gap * 2) / 3;
-  drawImageCard(canvas, shell_x + 10, stat_y, stat_w, stat_h, kProfileCardPath, kProfileCardLocalPath);
-  drawRadialMetric(canvas, shell_x + 10 + stat_w + gap, stat_y, stat_w, stat_h, "STEPS", dashboard->steps, dashboard->steps_target, dashboard->steps_unit);
-  drawRadialMetric(canvas, shell_x + 10 + (stat_w + gap) * 2, stat_y, stat_w, stat_h, "CALORIES", dashboard->calories, dashboard->calories_target, dashboard->calories_unit);
-
+  const int header_h = 132;
   const int footer_h = 44;
-  const int lists_y = stat_y + stat_h + gap;
+  const int lists_y = shell_y + 10 + header_h + gap;
   const int lists_h = shell_y + shell_h - lists_y - footer_h - gap - 10;
   const int list_w = (shell_w - 20 - gap) / 2;
+
   if (dashboard->list_count > 0) {
-    int challenge_side = list_w;
-    if (lists_h < challenge_side + 128) challenge_side = lists_h - 128;
-    if (challenge_side < 160) challenge_side = 160;
-    const int challenge_gap = gap;
-    const int chores_h = lists_h - challenge_side - challenge_gap;
-    drawListCard(canvas, shell_x + 10, lists_y, list_w, chores_h, &dashboard->lists[0], 0);
-    drawChallengeTile(canvas, shell_x + 10, lists_y + chores_h + challenge_gap, challenge_side);
+    drawListCard(canvas, shell_x + 10, lists_y, list_w, lists_h, &dashboard->lists[0], 0);
   }
   if (dashboard->list_count > 1) {
     const int right_x = shell_x + 10 + list_w + gap;
-    int challenge_side = list_w;
-    if (lists_h < challenge_side + 128) challenge_side = lists_h - 128;
-    if (challenge_side < 160) challenge_side = 160;
-    int meal_tile_h = lists_h - challenge_side - gap;
-    const int grocery_h = lists_h - meal_tile_h - gap;
-    drawMealPlannerTile(canvas, right_x, lists_y, list_w, meal_tile_h);
-    drawListCard(canvas, right_x, lists_y + meal_tile_h + gap, list_w, grocery_h, &dashboard->lists[1], 1);
+    int cookbook_side = list_w;
+    if (lists_h < cookbook_side + 128) cookbook_side = lists_h - 128;
+    if (cookbook_side < 160) cookbook_side = 160;
+    const int grocery_h = lists_h - cookbook_side - gap;
+    drawCookbookTile(canvas, right_x, lists_y, list_w, cookbook_side);
+    drawListCard(canvas, right_x, lists_y + cookbook_side + gap, list_w, grocery_h, &dashboard->lists[1], 1);
   }
 
-  doubleRect(canvas, shell_x + 10, shell_y + shell_h - footer_h - 10, shell_w - 20, footer_h, 0);
-  drawTextClipped(canvas, shell_x + 28, shell_y + shell_h - footer_h - 2, shell_w - 56, "TELEGRAM UPDATES LISTS // AUTO REFRESH 15M", 3, 0);
+  doubleRoundedRect(canvas, shell_x + 10, shell_y + shell_h - footer_h - 10, shell_w - 20, footer_h, 16, 0);
+  drawTextClipped(canvas, shell_x + 28, shell_y + shell_h - footer_h - 2, shell_w - 56, "TELEGRAM KEEPS LISTS IN SYNC // TAP REFRESH ANYTIME", 3, 0);
 }
 
 int writePgm(const char* path, const Canvas* canvas) {
@@ -2629,12 +2120,7 @@ int patchCachedItemDone(const char* cache, const char* item_id, int done) {
 void buildDashboardUrl(const char* base_url, char* out, size_t out_size) {
   if (!out || out_size == 0) return;
   if (!base_url) base_url = "";
-  if (g_day_offset == 0) {
-    snprintf(out, out_size, "%s", base_url);
-    return;
-  }
-  const char separator = strchr(base_url, '?') ? '&' : '?';
-  snprintf(out, out_size, "%s%coffset=%d", base_url, separator, g_day_offset);
+  snprintf(out, out_size, "%s", base_url);
 }
 
 int postToggleItemAsync(const char* toggle_url, const char* toggle_token, const char* item_id, int done) {
@@ -2697,23 +2183,9 @@ int handlePendingTouch(const Options* options) {
     fprintf(stderr, "touch=back\n");
     if (g_active_recipe >= 0) {
       g_active_recipe = -1;
-      if (g_active_recipe_return_meal_planner) {
-        g_active_recipe_return_meal_planner = 0;
-        g_active_recipe_library = 0;
-        g_active_meal_planner = 1;
-      } else if (g_active_recipe_library) {
-        g_active_recipe_library = 0;
-        g_active_recipes = 1;
-      } else {
-        g_active_meal_planner = 1;
-      }
     } else if (g_active_recipes) {
       g_active_recipes = 0;
-      g_active_meal_planner = 1;
-    } else if (g_active_challenge) {
-      g_active_challenge = 0;
     } else {
-      g_active_meal_planner = 0;
       g_active_list = -1;
     }
     return 1;
@@ -2722,64 +2194,22 @@ int handlePendingTouch(const Options* options) {
   if (action == kTouchHome) {
     fprintf(stderr, "touch=home\n");
     g_active_list = -1;
-    g_active_meal_planner = 0;
     g_active_recipes = 0;
     g_active_recipe = -1;
-    g_active_recipe_library = 0;
-    g_active_recipe_return_meal_planner = 0;
-    g_active_challenge = 0;
     return 1;
   }
 
   if (action == kTouchOpenList) {
     fprintf(stderr, "touch=open-list index=%d\n", g_pending_list_index);
-    g_active_meal_planner = 0;
     g_active_recipes = 0;
     g_active_recipe = -1;
-    g_active_recipe_library = 0;
-    g_active_recipe_return_meal_planner = 0;
-    g_active_challenge = 0;
     g_active_list = g_pending_list_index;
-    return 1;
-  }
-
-  if (action == kTouchOpenMealPlanner) {
-    fprintf(stderr, "touch=open-meal-planner\n");
-    g_active_list = -1;
-    g_active_recipes = 0;
-    g_active_recipe = -1;
-    g_active_recipe_library = 0;
-    g_active_recipe_return_meal_planner = 0;
-    g_active_challenge = 0;
-    g_active_meal_planner = 1;
     return 1;
   }
 
   if (action == kTouchOpenRecipe) {
     fprintf(stderr, "touch=open-recipe index=%d\n", g_pending_recipe_index);
     g_active_list = -1;
-    g_active_challenge = 0;
-    if (g_active_recipes) {
-      g_active_meal_planner = 0;
-      g_active_recipe_library = 1;
-      g_active_recipe_return_meal_planner = 0;
-    } else {
-      g_active_meal_planner = 1;
-      g_active_recipe_library = 0;
-      g_active_recipe_return_meal_planner = 0;
-    }
-    g_active_recipe = g_pending_recipe_index;
-    return 1;
-  }
-
-  if (action == kTouchOpenMealPlanRecipe) {
-    fprintf(stderr, "touch=open-meal-plan-recipe index=%d\n", g_pending_recipe_index);
-    g_active_list = -1;
-    g_active_challenge = 0;
-    g_active_recipes = 0;
-    g_active_meal_planner = 0;
-    g_active_recipe_library = 1;
-    g_active_recipe_return_meal_planner = 1;
     g_active_recipe = g_pending_recipe_index;
     return 1;
   }
@@ -2787,40 +2217,13 @@ int handlePendingTouch(const Options* options) {
   if (action == kTouchOpenRecipes) {
     fprintf(stderr, "touch=open-recipes\n");
     g_active_list = -1;
-    g_active_meal_planner = 0;
     g_active_recipe = -1;
-    g_active_recipe_library = 0;
-    g_active_recipe_return_meal_planner = 0;
-    g_active_challenge = 0;
     g_active_recipes = 1;
     return 1;
   }
 
-  if (action == kTouchOpenChallenge) {
-    fprintf(stderr, "touch=open-challenge\n");
-    g_active_list = -1;
-    g_active_meal_planner = 0;
-    g_active_recipes = 0;
-    g_active_recipe = -1;
-    g_active_recipe_library = 0;
-    g_active_recipe_return_meal_planner = 0;
-    g_active_challenge = 1;
-    return 1;
-  }
-
-  if (action == kTouchPreviousDay || action == kTouchNextDay) {
-    g_day_offset += action == kTouchPreviousDay ? -1 : 1;
-    if (g_day_offset < -365) g_day_offset = -365;
-    if (g_day_offset > 365) g_day_offset = 365;
-    fprintf(stderr, "touch=date-switch offset=%d\n", g_day_offset);
-    g_manual_fetch_refresh = 1;
-    g_event_refresh = 1;
-    return 2;
-  }
-
-  if (action == kTouchToday) {
-    g_day_offset = 0;
-    fprintf(stderr, "touch=date-switch today offset=0\n");
+  if (action == kTouchRefresh) {
+    fprintf(stderr, "touch=refresh\n");
     g_manual_fetch_refresh = 1;
     g_event_refresh = 1;
     return 2;
@@ -3131,20 +2534,13 @@ void handleSignal(int) {
 void applyInitialView(const char* view) {
   if (!view || !view[0]) return;
   g_active_list = -1;
-  g_active_meal_planner = 0;
   g_active_recipes = 0;
   g_active_recipe = -1;
-  g_active_recipe_library = 0;
-  g_active_challenge = 0;
-  if (strcmp(view, "challenge") == 0) g_active_challenge = 1;
-  else if (strcmp(view, "recipe") == 0) {
+  if (strcmp(view, "cookbook") == 0) {
+    g_active_recipes = 1;
+  } else if (strcmp(view, "recipe") == 0) {
     g_active_recipes = 1;
     g_active_recipe = 0;
-    g_active_recipe_library = 1;
-  } else if (strcmp(view, "meal-recipe") == 0) {
-    g_active_meal_planner = 1;
-    g_active_recipe = 0;
-    g_active_recipe_library = 0;
   } else if (strcmp(view, "chores") == 0) {
     g_active_list = 0;
   } else if (strcmp(view, "grocery") == 0) {
@@ -3206,7 +2602,7 @@ int parseOptions(int argc, char** argv, Options* options) {
     else if (strcmp(argv[i], "--save-pgm") == 0 && i + 1 < argc) copyText(options->save_pgm, sizeof(options->save_pgm), argv[++i]);
     else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images]\n", argv[0]);
-      printf("       %s --render PATH [--view challenge|recipe|meal-recipe|chores|grocery] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
+      printf("       %s --render PATH [--view cookbook|recipe|chores|grocery] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
       exit(0);
     } else {
       fprintf(stderr, "Unknown or incomplete argument: %s\n", argv[i]);

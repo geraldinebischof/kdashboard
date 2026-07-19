@@ -11,37 +11,6 @@ type PlannerItem = {
   updated_at: string;
 };
 
-type HealthSummary = {
-  date: string;
-  steps: number;
-  dietary_energy_kcal: string | number;
-  synced_at: string;
-  updated_at: string;
-};
-
-type HealthTarget = {
-  metric: "steps" | "calories";
-  label: string;
-  target_value: string | number;
-  unit: string;
-  updated_at: string;
-};
-
-type ChallengeLog = {
-  date: string;
-  water_l: string | number;
-  sleep_hours: string | number;
-  workouts: number;
-  updated_at: string;
-};
-
-type MealPlanEntry = {
-  date: string;
-  recipe_id: string;
-  sort_order: number;
-  updated_at: string;
-};
-
 type RecipeVersion = {
   id: string;
   rating: string | number;
@@ -50,10 +19,6 @@ type RecipeVersion = {
 
 type DashboardData = {
   items: PlannerItem[];
-  health: HealthSummary | null;
-  targets: HealthTarget[];
-  challenge: ChallengeLog | null;
-  mealPlan: MealPlanEntry[];
   recipes: RecipeVersion[];
 };
 
@@ -137,42 +102,14 @@ async function loadDashboardData(): Promise<DashboardData> {
     baseUrl: requiredEnv("INSFORGE_BASE_URL"),
     apiKey: requiredEnv("INSFORGE_API_KEY")
   });
-  const today = dashboardLocalDate();
 
   const baseStarted = timeMs();
-  const [
-    itemsResult,
-    healthResult,
-    challengeResult,
-    targetsResult,
-    mealPlanResult,
-    recipesResult
-  ] = await Promise.all([
+  const [itemsResult, recipesResult] = await Promise.all([
     admin.database
       .from("planner_items")
       .select("id,list_key,text,done,created_at,updated_at")
       .in("list_key", ["todo", "grocery"])
       .order("created_at", { ascending: false }),
-    admin.database
-      .from("health_daily_summaries")
-      .select("date,steps,dietary_energy_kcal,synced_at,updated_at")
-      .eq("source", "apple_health_ios")
-      .eq("date", today)
-      .limit(1),
-    admin.database
-      .from("challenge_daily_logs")
-      .select("date,water_l,sleep_hours,workouts,updated_at")
-      .eq("date", today)
-      .limit(1),
-    admin.database
-      .from("health_targets")
-      .select("metric,label,target_value,unit,updated_at")
-      .order("metric", { ascending: true }),
-    admin.database
-      .from("meal_plan_entries")
-      .select("date,recipe_id,sort_order,updated_at")
-      .eq("date", today)
-      .order("sort_order", { ascending: true }),
     admin.database
       .from("recipes")
       .select("id,rating,updated_at")
@@ -183,27 +120,11 @@ async function loadDashboardData(): Promise<DashboardData> {
   const { data: items, error: itemsError } = itemsResult;
   if (itemsError) throw itemsError;
 
-  const { data: healthRows, error: healthError } = healthResult;
-  if (healthError) throw healthError;
-
-  const { data: challengeRows, error: challengeError } = challengeResult;
-  if (challengeError) throw challengeError;
-
-  const { data: targets, error: targetsError } = targetsResult;
-  if (targetsError) throw targetsError;
-
-  const { data: mealPlanRows, error: mealPlanError } = mealPlanResult;
-  if (mealPlanError) throw mealPlanError;
-
   const { data: recipeRows, error: recipesError } = recipesResult;
   if (recipesError) throw recipesError;
 
   const payload = {
     items: items as PlannerItem[],
-    health: firstRow<HealthSummary>(healthRows),
-    targets: targets as HealthTarget[],
-    challenge: firstRow<ChallengeLog>(challengeRows),
-    mealPlan: mealPlanRows as MealPlanEntry[],
     recipes: recipeRows as RecipeVersion[]
   };
   logTiming("kindle-dashboard-events", {
@@ -217,28 +138,8 @@ async function loadDashboardData(): Promise<DashboardData> {
 function getDashboardVersion(data: DashboardData): string {
   return hashText(JSON.stringify({
     items: [...data.items].sort((a, b) => a.updated_at.localeCompare(b.updated_at)),
-    health: data.health,
-    challenge: data.challenge,
-    mealPlan: data.mealPlan,
-    recipes: data.recipes,
-    targets: [...data.targets].sort((a, b) => a.metric.localeCompare(b.metric))
+    recipes: data.recipes
   }));
-}
-
-function firstRow<T>(rows: unknown): T | null {
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] as T : null;
-}
-
-function dashboardLocalDate(): string {
-  const timezone = Deno.env.get("DASHBOARD_TIMEZONE") || "Asia/Kolkata";
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date());
-  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
 function hashText(value: string): string {

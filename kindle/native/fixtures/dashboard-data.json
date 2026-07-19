@@ -2,26 +2,6 @@
   "ok": true,
   "generated_at": "2026-06-28T08:30:00.000Z",
   "version": "fixture",
-  "health": {
-    "date": "2026-06-28",
-    "steps": 8432,
-    "calories": 1675,
-    "protein_g": 72,
-    "steps_target": 10000,
-    "calories_target": 2000,
-    "steps_unit": "steps",
-    "calories_unit": "kcal",
-    "synced_at": "2026-06-28T08:25:00.000Z"
-  },
-  "challenge": {
-    "date": "2026-06-28",
-    "water_l": 1,
-    "water_target_l": 3,
-    "sleep_hours": 7.5,
-    "sleep_target_hours": 8,
-    "workouts": 1,
-    "workout_target": 2
-  },
   "lists": [
     {
       "key": "todo",
@@ -36,7 +16,66 @@
       "title": "Grocery",
       "items": [
         { "id": "3", "text": "Milk", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
-        { "id": "4", "text": "Eggs", "done": false, "updated_at": "2026-06-28T08:11:00.000Z" }
+        { "id": "4", "text": "Eggs", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" }
+      ]
+    }
+  ],
+  "recipes": [
+    {
+      "id": "1",
+      "title": "Lemon Chicken Soup",
+      "photo_url": null,
+      "total_calories": 420,
+      "carbs_g": 32,
+      "fat_g": 14,
+      "protein_g": 38,
+      "rating": 4,
+      "instructions": "SIMMER CHICKEN AND VEGETABLES IN BROTH FOR 25 MINUTES. STIR IN LEMON JUICE AND RICE. SEASON AND SERVE HOT.",
+      "ingredients": [
+        { "name": "CHICKEN THIGHS", "amount": "500G", "calories": null, "sort_order": 0 },
+        { "name": "CARROTS", "amount": "2", "calories": null, "sort_order": 1 },
+        { "name": "CELERY", "amount": "2 STALKS", "calories": null, "sort_order": 2 },
+        { "name": "RICE", "amount": "1 CUP", "calories": null, "sort_order": 3 },
+        { "name": "LEMON JUICE", "amount": "2 TBSP", "calories": null, "sort_order": 4 },
+        { "name": "CHICKEN BROTH", "amount": "1L", "calories": null, "sort_order": 5 }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "Baked Salmon And Greens",
+      "photo_url": null,
+      "total_calories": 510,
+      "carbs_g": 18,
+      "fat_g": 26,
+      "protein_g": 42,
+      "rating": 5,
+      "instructions": "SEASON SALMON WITH SALT AND PEPPER. ROAST AT 400F FOR 15 MINUTES ALONGSIDE GREENS. DRIZZLE WITH OLIVE OIL BEFORE SERVING.",
+      "ingredients": [
+        { "name": "SALMON FILET", "amount": "400G", "calories": null, "sort_order": 0 },
+        { "name": "OLIVE OIL", "amount": "2 TBSP", "calories": null, "sort_order": 1 },
+        { "name": "KALE", "amount": "1 BUNCH", "calories": null, "sort_order": 2 },
+        { "name": "GARLIC", "amount": "2 CLOVES", "calories": null, "sort_order": 3 },
+        { "name": "SALT", "amount": "1 TSP", "calories": null, "sort_order": 4 },
+        { "name": "PEPPER", "amount": "1 TSP", "calories": null, "sort_order": 5 }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "Overnight Oats",
+      "photo_url": null,
+      "total_calories": 310,
+      "carbs_g": 44,
+      "fat_g": 9,
+      "protein_g": 12,
+      "rating": 4,
+      "instructions": "COMBINE OATS MILK AND YOGURT IN A JAR. STIR IN HONEY AND CHIA SEEDS. REFRIGERATE OVERNIGHT AND TOP WITH BERRIES.",
+      "ingredients": [
+        { "name": "ROLLED OATS", "amount": "1 CUP", "calories": null, "sort_order": 0 },
+        { "name": "MILK", "amount": "1 CUP", "calories": null, "sort_order": 1 },
+        { "name": "YOGURT", "amount": "1/2 CUP", "calories": null, "sort_order": 2 },
+        { "name": "CHIA SEEDS", "amount": "1 TBSP", "calories": null, "sort_order": 3 },
+        { "name": "HONEY", "amount": "1 TBSP", "calories": null, "sort_order": 4 },
+        { "name": "BERRIES", "amount": "1/2 CUP", "calories": null, "sort_order": 5 }
       ]
     }
   ]

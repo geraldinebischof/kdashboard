@@ -11,31 +11,6 @@ type PlannerItem = {
   updated_at: string;
 };
 
-type HealthSummary = {
-  date: string;
-  steps: number;
-  dietary_energy_kcal: string | number;
-  protein_g: string | number;
-  synced_at: string;
-  updated_at: string;
-};
-
-type HealthTarget = {
-  metric: "steps" | "calories";
-  label: string;
-  target_value: string | number;
-  unit: string;
-  updated_at: string;
-};
-
-type ChallengeLog = {
-  date: string;
-  water_l: string | number;
-  sleep_hours: string | number;
-  workouts: number;
-  updated_at: string;
-};
-
 type RecipeRow = {
   id: string;
   title: string;
@@ -57,13 +32,6 @@ type RecipeIngredientRow = {
   amount: string;
   calories: string | number | null;
   sort_order: number;
-};
-
-type MealPlanEntryRow = {
-  date: string;
-  recipe_id: string;
-  sort_order: number;
-  updated_at: string;
 };
 
 type RecipePayload = {
@@ -89,27 +57,6 @@ type DashboardPayload = {
   ok: true;
   generated_at: string;
   version: string;
-  health: {
-    date: string | null;
-    steps: number;
-    calories: number;
-    protein_g: number;
-    steps_target: number;
-    calories_target: number;
-    steps_unit: string;
-    calories_unit: string;
-    synced_at: string | null;
-  };
-  challenge: {
-    date: string;
-    day: number;
-    water_l: number;
-    water_target_l: number;
-    sleep_hours: number;
-    sleep_target_hours: number;
-    workouts: number;
-    workout_target: number;
-  };
   lists: Array<{
     key: ListKey;
     title: string;
@@ -120,7 +67,6 @@ type DashboardPayload = {
       updated_at: string;
     }>;
   }>;
-  meal_plan: RecipePayload[];
   recipes: RecipePayload[];
 };
 
@@ -145,8 +91,7 @@ export default async function(req: Request): Promise<Response> {
   }
 
   try {
-    const requestedDate = dashboardRequestedDate(req);
-    const payload = await loadDashboardPayload(requestedDate);
+    const payload = await loadDashboardPayload();
     return jsonResponse(payload);
   } catch (error) {
     return jsonResponse({ ok: false, error: errorMessage(error) }, 500);
@@ -155,52 +100,19 @@ export default async function(req: Request): Promise<Response> {
   }
 }
 
-async function loadDashboardPayload(today = dashboardLocalDate()): Promise<DashboardPayload> {
+async function loadDashboardPayload(): Promise<DashboardPayload> {
   const admin = createAdminClient({
     baseUrl: requiredEnv("INSFORGE_BASE_URL"),
     apiKey: requiredEnv("INSFORGE_API_KEY")
   });
 
   const baseStarted = timeMs();
-  const [
-    itemsResult,
-    healthResult,
-    challengeResult,
-    challengeStartResult,
-    mealPlanResult,
-    targetsResult,
-    recipesResult
-  ] = await Promise.all([
+  const [itemsResult, recipesResult] = await Promise.all([
     admin.database
       .from("planner_items")
       .select("id,list_key,text,done,created_at,updated_at")
       .in("list_key", ["todo", "grocery"])
       .order("created_at", { ascending: false }),
-    admin.database
-      .from("health_daily_summaries")
-      .select("date,steps,dietary_energy_kcal,protein_g,synced_at,updated_at")
-      .eq("source", "apple_health_ios")
-      .eq("date", today)
-      .limit(1),
-    admin.database
-      .from("challenge_daily_logs")
-      .select("date,water_l,sleep_hours,workouts,updated_at")
-      .eq("date", today)
-      .limit(1),
-    admin.database
-      .from("challenge_daily_logs")
-      .select("date")
-      .order("date", { ascending: true })
-      .limit(1),
-    admin.database
-      .from("meal_plan_entries")
-      .select("date,recipe_id,sort_order,updated_at")
-      .eq("date", today)
-      .order("sort_order", { ascending: true }),
-    admin.database
-      .from("health_targets")
-      .select("metric,label,target_value,unit,updated_at")
-      .order("metric", { ascending: true }),
     admin.database
       .from("recipes")
       .select("id,title,photo_url,photo_key,total_calories,carbs_g,fat_g,protein_g,rating,instructions,created_at,updated_at")
@@ -210,21 +122,6 @@ async function loadDashboardPayload(today = dashboardLocalDate()): Promise<Dashb
 
   const { data: items, error: itemsError } = itemsResult;
   if (itemsError) throw itemsError;
-
-  const { data: healthRows, error: healthError } = healthResult;
-  if (healthError) throw healthError;
-
-  const { data: challengeRows, error: challengeError } = challengeResult;
-  if (challengeError) throw challengeError;
-
-  const { data: challengeStartRows, error: challengeStartError } = challengeStartResult;
-  if (challengeStartError) throw challengeStartError;
-
-  const { data: mealPlanRows, error: mealPlanError } = mealPlanResult;
-  if (mealPlanError) throw mealPlanError;
-
-  const { data: targets, error: targetsError } = targetsResult;
-  if (targetsError) throw targetsError;
 
   const { data: recipes, error: recipesError } = recipesResult;
   if (recipesError) throw recipesError;
@@ -249,42 +146,12 @@ async function loadDashboardPayload(today = dashboardLocalDate()): Promise<Dashb
   const buildStarted = timeMs();
   const staleCompletedCutoff = Date.now() - COMPLETED_ITEM_HIDE_AFTER_MS;
   const plannerItems = (items as PlannerItem[]).filter((item) => shouldShowPlannerItem(item, staleCompletedCutoff));
-  const health = firstRow<HealthSummary>(healthRows);
-  const challenge = firstRow<ChallengeLog>(challengeRows);
-  const challengeStart = firstRow<Pick<ChallengeLog, "date">>(challengeStartRows);
-  const challengeDay = challengeStart?.date ? challengeDayFor(today, challengeStart.date) : 1;
-  const healthTargets = targets as HealthTarget[];
-  const mealPlanEntries = mealPlanRows as MealPlanEntryRow[];
-  const stepsTarget = metricTarget(healthTargets, "steps", 10000, "steps");
-  const caloriesTarget = metricTarget(healthTargets, "calories", 2000, "kcal");
   const ingredientsByRecipeId = groupIngredientsByRecipeId(ingredientRows);
   const recipePayloads = recipeRows.map((recipe) => recipePayload(recipe, ingredientsByRecipeId));
-  const recipesById = new Map(recipePayloads.map((recipe) => [recipe.id, recipe]));
 
   const payloadWithoutVersion = {
     ok: true as const,
-    generated_at: `${today}T00:00:00+05:30`,
-    health: {
-      date: health?.date ?? null,
-      steps: Math.max(0, Number(health?.steps ?? 0)),
-      calories: Math.max(0, Number(health?.dietary_energy_kcal ?? 0)),
-      protein_g: Math.max(0, Number(health?.protein_g ?? 0)),
-      steps_target: Math.max(0, Number(stepsTarget.target_value)),
-      calories_target: Math.max(0, Number(caloriesTarget.target_value)),
-      steps_unit: stepsTarget.unit,
-      calories_unit: caloriesTarget.unit,
-      synced_at: health?.synced_at ?? null
-    },
-    challenge: {
-      date: today,
-      day: challengeDay,
-      water_l: Math.max(0, Number(challenge?.water_l ?? 0)),
-      water_target_l: 3,
-      sleep_hours: Math.max(0, Number(challenge?.sleep_hours ?? 0)),
-      sleep_target_hours: 8,
-      workouts: Math.max(0, Number(challenge?.workouts ?? 0)),
-      workout_target: 2
-    },
+    generated_at: `${dashboardLocalDate()}T00:00:00+05:30`,
     lists: (["todo", "grocery"] as const).map((key) => ({
       key,
       title: LIST_TITLES[key],
@@ -298,19 +165,13 @@ async function loadDashboardPayload(today = dashboardLocalDate()): Promise<Dashb
           updated_at: item.updated_at
         }))
     })),
-    meal_plan: mealPlanEntries
-      .map((entry) => recipesById.get(entry.recipe_id))
-      .filter((recipe): recipe is RecipePayload => Boolean(recipe)),
     recipes: recipePayloads
   };
 
   const payload = {
     ...payloadWithoutVersion,
     version: hashText(JSON.stringify({
-      health: payloadWithoutVersion.health,
-      challenge: payloadWithoutVersion.challenge,
       lists: payloadWithoutVersion.lists,
-      meal_plan: payloadWithoutVersion.meal_plan,
       recipes: payloadWithoutVersion.recipes
     }))
   };
@@ -374,61 +235,6 @@ function dashboardLocalDate(): string {
   }).formatToParts(new Date());
   const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${byType.year}-${byType.month}-${byType.day}`;
-}
-
-function dashboardRequestedDate(req: Request): string {
-  const url = new URL(req.url);
-  const explicitDate = url.searchParams.get("date");
-  if (explicitDate && /^\d{4}-\d{2}-\d{2}$/.test(explicitDate)) {
-    return explicitDate;
-  }
-
-  const offset = Number(url.searchParams.get("offset") ?? 0);
-  if (!Number.isFinite(offset) || !Number.isInteger(offset) || offset === 0) {
-    return dashboardLocalDate();
-  }
-
-  return addLocalDays(dashboardLocalDate(), Math.max(-365, Math.min(365, offset)));
-}
-
-function addLocalDays(date: string, offset: number): string {
-  const [year, month, day] = date.split("-").map(Number);
-  const value = new Date(Date.UTC(year, month - 1, day + offset));
-  const y = value.getUTCFullYear();
-  const m = String(value.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(value.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function challengeDayFor(today: string, startDate: string): number {
-  const diff = localDateIndex(today) - localDateIndex(startDate);
-  if (!Number.isFinite(diff)) return 1;
-  return Math.max(1, Math.min(75, diff + 1));
-}
-
-function localDateIndex(value: string): number {
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  if (!year || !month || !day) return Number.NaN;
-  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
-}
-
-function metricTarget(
-  targets: HealthTarget[],
-  metric: HealthTarget["metric"],
-  fallbackValue: number,
-  fallbackUnit: string
-): HealthTarget {
-  return targets.find((target) => target.metric === metric) ?? {
-    metric,
-    label: metric,
-    target_value: fallbackValue,
-    unit: fallbackUnit,
-    updated_at: ""
-  };
-}
-
-function firstRow<T>(rows: unknown): T | null {
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] as T : null;
 }
 
 function shouldShowPlannerItem(item: PlannerItem, staleCompletedCutoff: number): boolean {
