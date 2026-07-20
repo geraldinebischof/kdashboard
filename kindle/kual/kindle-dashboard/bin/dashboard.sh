@@ -45,13 +45,35 @@ enable_wifi() {
 }
 
 stop_existing_processes() {
+  # Graceful first: SIGTERM lets the native app release its EVIOCGRAB on the
+  # touchscreen and join its input thread. Give it a few seconds before the
+  # SIGKILL fallback; otherwise the kernel can leave the next launch unable to
+  # receive touch events even though its own EVIOCGRAB succeeds.
+  pid=""
   if [ -s "$PIDFILE" ]; then
     pid="$(cat "$PIDFILE" 2>/dev/null)"
-    [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
-    rm -f "$PIDFILE"
   fi
-  pkill -f "$NATIVE_APP" >/dev/null 2>&1 || true
-  pkill -f "$RUN_APP" >/dev/null 2>&1 || true
+  [ -z "$pid" ] && pid="$(pgrep -f "$RUN_APP" 2>/dev/null | head -n1)"
+
+  if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$pid" >/dev/null 2>&1 || break
+      sleep 0.3
+    done
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      log "stop grace expired; escalating to SIGKILL pid=$pid"
+      kill -KILL "$pid" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  rm -f "$PIDFILE"
+  # Catch any strays (older launches, copies started outside the pidfile).
+  pkill -TERM -f "$NATIVE_APP" >/dev/null 2>&1 || true
+  pkill -TERM -f "$RUN_APP" >/dev/null 2>&1 || true
+  sleep 0.3
+  pkill -KILL -f "$NATIVE_APP" >/dev/null 2>&1 || true
+  pkill -KILL -f "$RUN_APP" >/dev/null 2>&1 || true
 }
 
 is_running() {

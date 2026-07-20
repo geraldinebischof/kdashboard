@@ -7,6 +7,8 @@ ZIG_CPU_FLAG := $(if $(ZIG_MCPU),-mcpu=$(ZIG_MCPU),)
 ZIG_LDFLAGS ?= -static
 
 SRC := src/kindle_dashboard.cpp
+SRCS := $(wildcard src/*.cpp)
+HDRS := $(wildcard src/*.h)
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/kindle-dashboard-local
 KINDLE_TARGET := $(BUILD_DIR)/kindle-dashboard-arm
@@ -23,31 +25,31 @@ all: local
 
 local: $(TARGET)
 
-$(TARGET): $(SRC)
+$(TARGET): $(SRCS) $(HDRS)
 	mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -o $@ $<
+	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
 kindle: $(KINDLE_TARGET)
 
-$(KINDLE_TARGET): $(SRC)
+$(KINDLE_TARGET): $(SRCS) $(HDRS)
 	mkdir -p $(BUILD_DIR)
 	@command -v $(KINDLE_CXX) >/dev/null 2>&1 || { \
 		echo "Missing Kindle cross compiler: $(KINDLE_CXX)"; \
 		echo "Install a compatible ARM toolchain or rerun with KINDLE_CXX=/path/to/compiler"; \
 		exit 1; \
 	}
-	$(KINDLE_CXX) $(CXXFLAGS) -static -o $@ $<
+	$(KINDLE_CXX) $(CXXFLAGS) -static -o $@ $(SRCS)
 
 kindle-zig: $(ZIG_TARGET_BINARY)
 
-$(ZIG_TARGET_BINARY): $(SRC)
+$(ZIG_TARGET_BINARY): $(SRCS) $(HDRS)
 	mkdir -p $(BUILD_DIR)
 	@command -v $(ZIG) >/dev/null 2>&1 || { \
 		echo "Missing Zig compiler: $(ZIG)"; \
 		echo "Install Zig or rerun with ZIG=/path/to/zig"; \
 		exit 1; \
 	}
-	$(ZIG) c++ -target $(ZIG_TARGET) $(ZIG_CPU_FLAG) $(CXXFLAGS) $(ZIG_LDFLAGS) -s -o $@ $<
+	$(ZIG) c++ -target $(ZIG_TARGET) $(ZIG_CPU_FLAG) $(CXXFLAGS) $(ZIG_LDFLAGS) -s -o $@ $(SRCS)
 
 extension: $(KINDLE_TARGET)
 	rm -rf $(EXTENSION_ROOT)
@@ -57,6 +59,7 @@ extension: $(KINDLE_TARGET)
 	cp ../kual/kindle-dashboard/config.sh.example $(EXTENSION_DIR)/config.sh.example
 	cp ../kual/kindle-dashboard/menu.json $(EXTENSION_DIR)/menu.json
 	if [ -d ../kual/kindle-dashboard/assets/recipes ]; then cp -R ../kual/kindle-dashboard/assets/recipes $(EXTENSION_DIR)/assets/recipes; fi
+	cp ../kual/kindle-dashboard/assets/cookbook-icon.pgm $(EXTENSION_DIR)/assets/cookbook-icon.pgm
 	cp ../kual/kindle-dashboard/bin/menu-ping.sh $(EXTENSION_DIR)/bin/menu-ping.sh
 	cp ../kual/kindle-dashboard/bin/start.sh $(EXTENSION_DIR)/bin/start.sh
 	cp ../kual/kindle-dashboard/bin/start-light.sh $(EXTENSION_DIR)/bin/start-light.sh
@@ -81,6 +84,7 @@ extension-zig: $(ZIG_TARGET_BINARY)
 	cp ../kual/kindle-dashboard/config.sh.example $(EXTENSION_DIR)/config.sh.example
 	cp ../kual/kindle-dashboard/menu.json $(EXTENSION_DIR)/menu.json
 	if [ -d ../kual/kindle-dashboard/assets/recipes ]; then cp -R ../kual/kindle-dashboard/assets/recipes $(EXTENSION_DIR)/assets/recipes; fi
+	cp ../kual/kindle-dashboard/assets/cookbook-icon.pgm $(EXTENSION_DIR)/assets/cookbook-icon.pgm
 	cp ../kual/kindle-dashboard/bin/menu-ping.sh $(EXTENSION_DIR)/bin/menu-ping.sh
 	cp ../kual/kindle-dashboard/bin/start.sh $(EXTENSION_DIR)/bin/start.sh
 	cp ../kual/kindle-dashboard/bin/start-light.sh $(EXTENSION_DIR)/bin/start-light.sh
