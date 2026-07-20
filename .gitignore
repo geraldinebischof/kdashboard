@@ -54,6 +54,7 @@ xcuserdata/
 Thumbs.db
 *.swp
 *.swo
+.idea/
 
 # AI agent local state
 .agent/
