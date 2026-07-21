@@ -31,7 +31,7 @@ void Navigator::applyInitialView(const char* view) {
   } else if (strcmp(view, "recipe") == 0) {
     openRecipes();
     openRecipe(0);
-  } else if (strcmp(view, "chores") == 0) {
+  } else if (strcmp(view, "todo") == 0) {
     openList(0);
   } else if (strcmp(view, "grocery") == 0) {
     openList(1);

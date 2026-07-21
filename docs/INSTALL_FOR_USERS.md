@@ -107,7 +107,7 @@ Supported lists:
 - Grocery: `grocery`, `groceries`, `shopping`, `market`
 - Workout: `workout`, `exercise`, `training`, `gym`
 - Meal notes: `meal`, `meals`, `menu`, `food`
-- Todo/chores: `todo`, `to-do`, `task`, `tasks`, `errand`, `errands`
+- To-do: `todo`, `to-do`, `task`, `tasks`, `errand`, `errands`
 
 Add items:
 

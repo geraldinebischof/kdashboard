@@ -147,7 +147,7 @@ async function parseTelegramMessage(message: string): Promise<TelegramAction | n
           content:
             [
               "Parse one Telegram dashboard message into strict JSON.",
-              "For planner/list updates return: {\"kind\":\"planner\",\"action\":\"add|complete|uncomplete|delete|clear\",\"list_key\":\"grocery|workout|meal|todo\",\"items\":[\"short item\"],\"all_lists\":false}. Use list_key \"todo\" for chores/tasks. Use [] only for clear.",
+              "For planner/list updates return: {\"kind\":\"planner\",\"action\":\"add|complete|uncomplete|delete|clear\",\"list_key\":\"grocery|workout|meal|todo\",\"items\":[\"short item\"],\"all_lists\":false}. Use list_key \"todo\" for to-do items/tasks. Use [] only for clear.",
               "For health targets return: {\"kind\":\"target\",\"action\":\"set_target\",\"metric\":\"steps|calories\",\"value\":12000,\"unit\":\"steps|kcal\"}.",
               "For 75 day challenge check-ins return: {\"kind\":\"challenge\",\"action\":\"add_water|set_sleep|add_workout\",\"value\":1}. Treat XL water as 1 liter, sleep value as hours, and workout value as one completed workout.",
               "For today's meal plan made from saved recipes return: {\"kind\":\"meal_plan\",\"action\":\"add_meal|set_meal_plan|clear_meal_plan\",\"recipes\":[\"Saved Recipe Title\"]}. Use add_meal for adding/include/put another meal; use set_meal_plan only when replacing the whole plan.",
@@ -356,7 +356,7 @@ async function applyPlannerAction(admin: any, action: PlannerAction): Promise<st
 }
 
 function plannerListLabel(listKey: ListKey): string {
-  return listKey === "todo" ? "chores" : listKey;
+  return listKey === "todo" ? "to-do" : listKey;
 }
 
 async function applyHealthTargetAction(admin: any, action: HealthTargetAction): Promise<string> {

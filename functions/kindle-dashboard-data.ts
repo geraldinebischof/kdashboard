@@ -71,7 +71,7 @@ type DashboardPayload = {
 };
 
 const LIST_TITLES: Record<ListKey, string> = {
-  todo: "Chores",
+  todo: "To Do",
   grocery: "Grocery"
 };
 const COMPLETED_ITEM_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;

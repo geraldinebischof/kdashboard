@@ -62,7 +62,7 @@ int parseOptions(int argc, char** argv, Options* options) {
     else if (strcmp(argv[i], "--save-pgm") == 0 && i + 1 < argc) copyText(options->save_pgm, sizeof(options->save_pgm), argv[++i]);
     else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images]\n", argv[0]);
-      printf("       %s --render PATH [--view cookbook|recipe|chores|grocery] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
+      printf("       %s --render PATH [--view cookbook|recipe|todo|grocery] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
       exit(0);
     } else {
       fprintf(stderr, "Unknown or incomplete argument: %s\n", argv[i]);

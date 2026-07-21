@@ -67,7 +67,7 @@ Code entry points:
 
 InsForge handles the cloud layer:
 
-**Postgres Database:** chores, groceries, recipes, meal plans, health summaries,
+**Postgres Database:** to-dos, groceries, recipes, meal plans, health summaries,
 challenge logs
 
 **Edge functions:** read dashboard data, sync HealthKit, parse Telegram updates,

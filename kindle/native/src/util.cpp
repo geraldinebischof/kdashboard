@@ -177,13 +177,13 @@ void formatDisplayDate(const char* iso, const char* status, char* out, size_t si
 
 const char* displayListTitle(const List* list) {
   if (!list) return "";
-  if (strcmp(list->key, "todo") == 0) return "CHORES";
+  if (strcmp(list->key, "todo") == 0) return "TO DO";
   if (strcmp(list->key, "grocery") == 0) return "GROCERY";
   return list->title[0] ? list->title : list->key;
 }
 
 const char* displayListTitleForIndex(const List* list, int list_index) {
-  if (list_index == 0) return "CHORES";
+  if (list_index == 0) return "TO DO";
   if (list_index == 1) return "GROCERY";
   return displayListTitle(list);
 }
