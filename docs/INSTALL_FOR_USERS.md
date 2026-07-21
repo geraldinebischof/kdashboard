@@ -219,21 +219,12 @@ remove meals
 
 ### Saved Recipes
 
-Create or update a saved recipe. Calories, carbs, fat, and protein are required
-for the built-in parser; rating and ingredients are optional.
+Create or update a saved recipe. Ingredients and instructions are optional.
 
 ```text
-add recipe Sample Wrap calories 420 carbs 45 fat 14 protein 28 rating 4 ingredients tortilla 1 piece, beans 100 g instructions roll and toast
-save meal Sample Smoothie kcal 180 c 28 f 4 p 6 rating 4.5
-create recipe Sample Bowl cal 360 carbs 48 fat 8 protein 24 ingredients yogurt 200 g, oats 20 g
-```
-
-Rate an existing recipe:
-
-```text
-rate Sample Wrap 4.5/5
-set rating for Sample Smoothie to 4
-give Sample Bowl a rating of 5 stars
+add recipe Sample Wrap ingredients tortilla 1 piece, beans 100 g instructions roll and toast
+save meal Sample Smoothie ingredients milk 200 ml, fruit 0.5 cup
+create recipe Sample Bowl ingredients yogurt 200 g, oats 20 g
 ```
 
 ## 4. Configure the Kindle Package

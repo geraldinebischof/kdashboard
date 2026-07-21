@@ -34,8 +34,6 @@ class Canvas {
   int drawTextWrapped(int x, int y, int max_width, const char* text, int scale, unsigned char color, int max_lines);
   void drawTextCentered(int cx, int y, int max_width, const char* text, int scale, unsigned char color);
 
-  void drawStarIcon(int x, int y, int scale, int filled);
-  void drawStarRating(int x, int y, int rating_tenths, int scale);
   void drawCheckbox(int x, int y, int size, int checked);
   void drawHeartIcon(int x, int y, int scale);
 

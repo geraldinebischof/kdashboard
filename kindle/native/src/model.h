@@ -15,8 +15,7 @@ enum TouchAction {
   kTouchToggleItem = 4,
   kTouchOpenRecipe = 6,
   kTouchOpenRecipes = 7,
-  kTouchHome = 8,
-  kTouchRefresh = 14
+  kTouchHome = 8
 };
 
 struct Item {
@@ -43,11 +42,6 @@ struct RecipeRecord {
   char instructions[160];
   RecipeIngredientRecord ingredients[kMaxRecipeIngredients];
   int ingredient_count;
-  int calories;
-  int carbs;
-  int fat;
-  int protein;
-  int rating_tenths;
 };
 
 struct Dashboard {

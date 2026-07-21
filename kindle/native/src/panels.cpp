@@ -104,31 +104,20 @@ void Panel::drawTopHeader(Canvas& canvas, const Dashboard& dashboard, const char
   canvas.doubleRoundedRect(shell_x + 10, shell_y + 10, shell_w - 20, header_h, 26, 0);
 
   Rect exit_rect = exitButtonRectForScreen(canvas.width, canvas.height);
-  const int refresh_w = 150;
-  const int refresh_gap = 16;
-  Rect refresh_rect = {exit_rect.x - refresh_gap - refresh_w, exit_rect.y, refresh_w, exit_rect.h};
+  const int right_bound = exit_rect.x - 16;
 
-  canvas.drawTextClipped(shell_x + 28, shell_y + 24, refresh_rect.x - shell_x - 44, "HOME SWEET HOME", 4, 0);
+  canvas.drawTextClipped(shell_x + 28, shell_y + 24, right_bound - shell_x - 44, "THE HORRORS PERSIST BUT SO DO WE", 4, 0);
 
   Rect exit_hit_rect = {exit_rect.x - 20, kKindleStatusBarHeight, exit_rect.w + 40, exit_rect.y - kKindleStatusBarHeight + exit_rect.h + 20};
   canvas.strokeRoundedRect(exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 18, 2, 0);
-  canvas.drawTextCentered(exit_rect.x + exit_rect.w / 2, exit_rect.y + 34, exit_rect.w - 16, "EXIT", 3, 0);
+  canvas.drawTextCentered(exit_rect.x + exit_rect.w / 2, exit_rect.y + 34, exit_rect.w - 16, "X", 3, 0);
   ctx.touch.add(exit_hit_rect, kTouchExit, -1, -1, "", 0);
   ctx.touch.add(exit_rect, kTouchExit, -1, -1, "", 0);
 
-  canvas.strokeRoundedRect(refresh_rect.x, refresh_rect.y, refresh_rect.w, refresh_rect.h, 18, 2, 0);
-  const int refresh_icon_cx = refresh_rect.x + refresh_rect.w / 2;
-  const int refresh_icon_cy = refresh_rect.y + 30;
-  canvas.circleRing(refresh_icon_cx, refresh_icon_cy, 16, 4, 78, 0);
-  canvas.line(refresh_icon_cx - 4, refresh_icon_cy - 20, refresh_icon_cx + 9, refresh_icon_cy - 15, 3, 0);
-  canvas.line(refresh_icon_cx + 9, refresh_icon_cy - 15, refresh_icon_cx + 1, refresh_icon_cy - 4, 3, 0);
-  canvas.drawTextCentered(refresh_icon_cx, refresh_rect.y + refresh_rect.h - 30, refresh_rect.w - 16, "REFRESH", 2, 0);
-  ctx.touch.add(refresh_rect, kTouchRefresh, -1, -1, "", 0);
-
-  canvas.line(shell_x + 20, shell_y + 88, refresh_rect.x - 8, shell_y + 88, 2, 0);
+  canvas.line(shell_x + 20, shell_y + 88, right_bound - 8, shell_y + 88, 2, 0);
   char updated[96];
   formatDisplayDate(dashboard.generated_at, status, updated, sizeof(updated));
-  canvas.drawTextClipped(shell_x + 28, shell_y + 102, refresh_rect.x - shell_x - 44, updated, 2, 0);
+  canvas.drawTextClipped(shell_x + 28, shell_y + 102, right_bound - shell_x - 44, updated, 2, 0);
 }
 
 void Panel::drawSubHeader(Canvas& canvas, int shell_x, int y, int shell_w, const char* title, RenderContext& ctx) const {
@@ -189,7 +178,7 @@ void HomePanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
   drawCookbookTile(canvas, right_x, bottom_y, list_w, row_h, ctx);
 
   canvas.doubleRoundedRect(shell_x + 10, shell_y + shell_h - footer_h - 10, shell_w - 20, footer_h, 16, 0);
-  canvas.drawTextClipped(shell_x + 28, shell_y + shell_h - footer_h - 2, shell_w - 56, "TELEGRAM KEEPS LISTS IN SYNC // TAP REFRESH ANYTIME", 3, 0);
+  canvas.drawTextClipped(shell_x + 28, shell_y + shell_h - footer_h - 2, shell_w - 56, "TELEGRAM KEEPS LISTS IN SYNC", 3, 0);
 }
 
 void ListPanel::render(Canvas& canvas, const Dashboard& dashboard, const char* status, const ViewState& state, RenderContext& ctx) const {
@@ -248,7 +237,7 @@ void CookbookPanel::render(Canvas& canvas, const Dashboard& dashboard, const cha
 
   const int gap = 10;
   const int card_w = (shell_w - 36 - gap) / 2;
-  const int card_h = 132;
+  const int card_h = 96;
   const int first_y = sub_y + 98;
   for (int i = 0; i < dashboard.recipe_count && i < kMaxRecipes; i++) {
     const int column = i % 2;
@@ -261,12 +250,8 @@ void CookbookPanel::render(Canvas& canvas, const Dashboard& dashboard, const cha
     ctx.touch.add(card_rect, kTouchOpenRecipe, -1, i, "", 0);
     canvas.drawTextClipped(card_x + 14, card_y + 14, card_w - 28, dashboard.recipes[i].title, 3, 0);
     canvas.line(card_x + 10, card_y + 54, card_x + card_w - 10, card_y + 54, 2, 0);
-    char macro_text[96];
-    snprintf(macro_text, sizeof(macro_text), "%d CAL C%d F%d P%d", dashboard.recipes[i].calories, dashboard.recipes[i].carbs, dashboard.recipes[i].fat, dashboard.recipes[i].protein);
-    canvas.drawTextClipped(card_x + 14, card_y + 72, card_w - 28, macro_text, 2, 0);
-    canvas.drawStarRating(card_x + 14, card_y + 102, dashboard.recipes[i].rating_tenths, 1);
-    canvas.drawHeartIcon(card_x + card_w - 92, card_y + 98, 2);
-    canvas.drawText(card_x + card_w - 70, card_y + 104, "OPEN", 2, 0);
+    canvas.drawHeartIcon(card_x + card_w - 92, card_y + 66, 2);
+    canvas.drawText(card_x + card_w - 70, card_y + 72, "OPEN", 2, 0);
   }
 }
 
@@ -293,38 +278,14 @@ void RecipePanel::render(Canvas& canvas, const Dashboard& dashboard, const char*
   canvas.strokeRoundedRect(card_x, card_y, card_w, card_h, 20, 3, 0);
   canvas.drawTextClipped(card_x + 20, card_y + 22, card_w - 40, recipe->title, 5, 0);
   canvas.line(card_x + 14, card_y + 76, card_x + card_w - 14, card_y + 76, 2, 0);
-  canvas.drawTextClipped(card_x + 20, card_y + 86, 126, "RATING", 3, 0);
-  canvas.drawStarRating(card_x + 164, card_y + 84, recipe->rating_tenths, 2);
 
   const int content_x = card_x + 20;
   const int content_w = card_w - 40;
-  const int top_y = card_y + 126;
-  const int column_gap = 14;
-  const int photo_w = (content_w - column_gap) / 2;
-  const int photo_h = photo_w;
-  const int macro_x = content_x + photo_w + column_gap;
-  const int macro_w = content_w - photo_w - column_gap;
-  canvas.strokeRoundedRect(content_x, top_y, photo_w, photo_h, 14, 2, 0);
-  canvas.drawRecipeLocalImage(content_x + 8, top_y + 8, photo_w - 16, photo_h - 16, recipe, ctx.invert_images, ctx.pgm_cache);
+  const int photo_h = 180;
+  canvas.strokeRoundedRect(content_x, card_y + 96, content_w, photo_h, 14, 2, 0);
+  canvas.drawRecipeLocalImage(content_x + 8, card_y + 104, content_w - 16, photo_h - 16, recipe, ctx.invert_images, ctx.pgm_cache);
 
-  const int macro_gap = 8;
-  const int macro_box_h = (photo_h - macro_gap) / 2;
-  const int macro_box_w = (macro_w - macro_gap) / 2;
-  const char* labels[4] = {"CAL", "CARBS", "FAT", "PROT"};
-  const int values[4] = {recipe->calories, recipe->carbs, recipe->fat, recipe->protein};
-  for (int i = 0; i < 4; i++) {
-    const int column = i % 2;
-    const int row = i / 2;
-    const int box_x = macro_x + column * (macro_box_w + macro_gap);
-    const int box_y = top_y + row * (macro_box_h + macro_gap);
-    canvas.strokeRoundedRect(box_x, box_y, macro_box_w, macro_box_h, 12, 2, 0);
-    canvas.drawTextCentered(box_x + macro_box_w / 2, box_y + 22, macro_box_w - 8, labels[i], 2, 0);
-    char value_text[24];
-    snprintf(value_text, sizeof(value_text), i == 0 ? "%d" : "%dG", values[i]);
-    canvas.drawTextCentered(box_x + macro_box_w / 2, box_y + 64, macro_box_w - 8, value_text, 4, 0);
-  }
-
-  const int ingredients_title_y = top_y + photo_h + 28;
+  const int ingredients_title_y = card_y + 96 + photo_h + 28;
   canvas.drawTextClipped(content_x, ingredients_title_y, content_w, "INGREDIENTS", 3, 0);
   const int ingredient_y = ingredients_title_y + 40;
   const int ingredient_row_h = 34;

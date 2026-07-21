@@ -16,11 +16,6 @@ type RecipeRow = {
   title: string;
   photo_url: string | null;
   photo_key: string | null;
-  total_calories: string | number;
-  carbs_g: string | number;
-  fat_g: string | number;
-  protein_g: string | number;
-  rating: string | number;
   instructions: string;
   created_at: string;
   updated_at: string;
@@ -30,7 +25,6 @@ type RecipeIngredientRow = {
   recipe_id: string;
   name: string;
   amount: string;
-  calories: string | number | null;
   sort_order: number;
 };
 
@@ -39,16 +33,10 @@ type RecipePayload = {
   title: string;
   photo_url: string | null;
   photo_key: string | null;
-  total_calories: number;
-  carbs_g: number;
-  fat_g: number;
-  protein_g: number;
-  rating: number;
   instructions: string;
   ingredients: Array<{
     name: string;
     amount: string;
-    calories: number | null;
     sort_order: number;
   }>;
 };
@@ -123,7 +111,7 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
       .order("created_at", { ascending: false }),
     admin.database
       .from("recipes")
-      .select("id,title,photo_url,photo_key,total_calories,carbs_g,fat_g,protein_g,rating,instructions,created_at,updated_at")
+      .select("id,title,photo_url,photo_key,instructions,created_at,updated_at")
       .order("title", { ascending: true })
   ]);
   const baseQueryMs = elapsedMs(baseStarted);
@@ -142,7 +130,7 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
   if (recipeIds.length > 0) {
     const { data: recipeIngredients, error: ingredientsError } = await admin.database
       .from("recipe_ingredients")
-      .select("recipe_id,name,amount,calories,sort_order")
+      .select("recipe_id,name,amount,sort_order")
       .in("recipe_id", recipeIds)
       .order("sort_order", { ascending: true });
 
@@ -210,27 +198,15 @@ function recipePayload(recipe: RecipeRow, ingredientsByRecipeId: Map<string, Rec
     title: recipe.title,
     photo_url: recipe.photo_url,
     photo_key: recipe.photo_key,
-    total_calories: Math.max(0, Number(recipe.total_calories ?? 0)),
-    carbs_g: Math.max(0, Number(recipe.carbs_g ?? 0)),
-    fat_g: Math.max(0, Number(recipe.fat_g ?? 0)),
-    protein_g: Math.max(0, Number(recipe.protein_g ?? 0)),
-    rating: clampRating(recipe.rating),
     instructions: recipe.instructions,
     ingredients: [...ingredients]
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((ingredient) => ({
         name: ingredient.name,
         amount: ingredient.amount,
-        calories: ingredient.calories == null ? null : Math.max(0, Number(ingredient.calories)),
         sort_order: ingredient.sort_order
       }))
   };
-}
-
-function clampRating(value: string | number): number {
-  const rating = Number(value ?? 0);
-  if (!Number.isFinite(rating)) return 0;
-  return Math.max(0, Math.min(5, Math.round(rating * 10) / 10));
 }
 
 function dashboardLocalDate(): string {

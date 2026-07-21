@@ -42,7 +42,7 @@ class Panel {
                       const ViewState& state, RenderContext& ctx) const = 0;
 
  protected:
-  // Title bar with EXIT / REFRESH buttons and the last-sync line.
+  // Title bar with the EXIT (X) button and the last-sync line.
   void drawTopHeader(Canvas& canvas, const Dashboard& dashboard, const char* status,
                      int shell_x, int shell_y, int shell_w, RenderContext& ctx) const;
   // Secondary header with a title plus HOME / BACK buttons.

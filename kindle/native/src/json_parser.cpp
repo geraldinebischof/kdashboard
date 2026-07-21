@@ -67,19 +67,6 @@ int extractString(const char* start, const char* end, const char* key, char* out
   return 0;
 }
 
-int extractInt(const char* start, const char* end, const char* key, int fallback) {
-  const char* value = findKeyInRange(start, end, key);
-  if (!value) return fallback;
-  return static_cast<int>(strtol(value, NULL, 10));
-}
-
-int extractScaledInt(const char* start, const char* end, const char* key, int scale, int fallback) {
-  const char* value = findKeyInRange(start, end, key);
-  if (!value) return fallback;
-  const double parsed = strtod(value, NULL);
-  return static_cast<int>(parsed * scale + (parsed >= 0 ? 0.5 : -0.5));
-}
-
 int extractBool(const char* start, const char* end, const char* key, int fallback) {
   const char* value = findKeyInRange(start, end, key);
   if (!value) return fallback;
@@ -176,11 +163,6 @@ int parseRecipes(const char* json, Dashboard* dashboard) {
     extractString(object_start, object_end, "id", recipe->id, sizeof(recipe->id), "");
     extractString(object_start, object_end, "title", recipe->title, sizeof(recipe->title), "");
     extractString(object_start, object_end, "instructions", recipe->instructions, sizeof(recipe->instructions), "");
-    recipe->calories = extractInt(object_start, object_end, "total_calories", 0);
-    recipe->carbs = extractInt(object_start, object_end, "carbs_g", 0);
-    recipe->fat = extractInt(object_start, object_end, "fat_g", 0);
-    recipe->protein = extractInt(object_start, object_end, "protein_g", 0);
-    recipe->rating_tenths = extractScaledInt(object_start, object_end, "rating", 10, 0);
     parseRecipeIngredients(object_start, object_end, recipe);
     if (recipe->title[0]) dashboard->recipe_count++;
     cursor = object_end + 1;

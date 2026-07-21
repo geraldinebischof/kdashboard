@@ -279,52 +279,6 @@ void Canvas::drawTextCentered(int cx, int y, int max_width, const char* text, in
   drawText(cx - textWidth(clipped, scale) / 2, y, clipped, scale, color);
 }
 
-void Canvas::drawStarIcon(int x, int y, int scale, int filled) {
-  static const char* filled_mask[] = {
-    "......#......",
-    ".....###.....",
-    ".....###.....",
-    "#############",
-    ".###########.",
-    "..#########..",
-    "...#######...",
-    "...#######...",
-    "..###...###..",
-    ".##.......##.",
-    "##.........##"
-  };
-  static const char* empty_mask[] = {
-    "......#......",
-    ".....#.#.....",
-    ".....#.#.....",
-    "###..#.#..###",
-    ".##.....##..",
-    "..##...##...",
-    "...#...#....",
-    "...#...#....",
-    "..##...##...",
-    ".##.....##..",
-    "##.......##."
-  };
-  const char** mask = filled ? filled_mask : empty_mask;
-  for (int row = 0; row < 11; row++) {
-    for (int col = 0; mask[row][col]; col++) {
-      if (mask[row][col] == '#') fillRect(x + col * scale, y + row * scale, scale, scale, 0);
-    }
-  }
-}
-
-void Canvas::drawStarRating(int x, int y, int rating_tenths, int scale) {
-  int filled = (rating_tenths + 5) / 10;
-  if (filled < 0) filled = 0;
-  if (filled > 5) filled = 5;
-  const int star_w = 13 * scale;
-  const int gap = 4 * scale;
-  for (int i = 0; i < 5; i++) {
-    drawStarIcon(x + i * (star_w + gap), y, scale, i < filled);
-  }
-}
-
 void Canvas::drawCheckbox(int x, int y, int size, int checked) {
   if (checked) {
     fillRoundedRect(x, y, size, size, size / 4, 0);

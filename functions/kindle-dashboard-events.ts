@@ -13,7 +13,6 @@ type PlannerItem = {
 
 type RecipeVersion = {
   id: string;
-  rating: string | number;
   updated_at: string;
 };
 
@@ -112,7 +111,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       .order("created_at", { ascending: false }),
     admin.database
       .from("recipes")
-      .select("id,rating,updated_at")
+      .select("id,updated_at")
       .order("id", { ascending: true })
   ]);
   const baseQueryMs = elapsedMs(baseStarted);

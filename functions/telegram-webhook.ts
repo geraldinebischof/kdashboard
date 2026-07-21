@@ -27,27 +27,14 @@ type ChallengeAction = {
 type RecipeIngredientInput = {
   name: string;
   amount: string;
-  calories?: number | null;
 };
 
 type RecipeAction = {
   kind: "recipe";
   action: "add_recipe";
   title: string;
-  total_calories: number;
-  carbs_g: number;
-  fat_g: number;
-  protein_g: number;
-  rating: number;
   instructions?: string;
   ingredients: RecipeIngredientInput[];
-};
-
-type RecipeRatingAction = {
-  kind: "recipe_rating";
-  action: "rate_recipe";
-  title: string;
-  rating: number;
 };
 
 type MealPlanAction = {
@@ -56,7 +43,7 @@ type MealPlanAction = {
   recipes: string[];
 };
 
-type TelegramAction = PlannerAction | HealthTargetAction | RecipeAction | RecipeRatingAction | ChallengeAction | MealPlanAction;
+type TelegramAction = PlannerAction | HealthTargetAction | RecipeAction | ChallengeAction | MealPlanAction;
 
 type TelegramUpdate = {
   message?: {
@@ -151,8 +138,7 @@ async function parseTelegramMessage(message: string): Promise<TelegramAction | n
               "For health targets return: {\"kind\":\"target\",\"action\":\"set_target\",\"metric\":\"steps|calories\",\"value\":12000,\"unit\":\"steps|kcal\"}.",
               "For 75 day challenge check-ins return: {\"kind\":\"challenge\",\"action\":\"add_water|set_sleep|add_workout\",\"value\":1}. Treat XL water as 1 liter, sleep value as hours, and workout value as one completed workout.",
               "For today's meal plan made from saved recipes return: {\"kind\":\"meal_plan\",\"action\":\"add_meal|set_meal_plan|clear_meal_plan\",\"recipes\":[\"Saved Recipe Title\"]}. Use add_meal for adding/include/put another meal; use set_meal_plan only when replacing the whole plan.",
-              "For rating a saved meal or recipe return: {\"kind\":\"recipe_rating\",\"action\":\"rate_recipe\",\"title\":\"Saved Recipe Title\",\"rating\":4.5}. Rating is out of 5.",
-              "For recipes return: {\"kind\":\"recipe\",\"action\":\"add_recipe\",\"title\":\"Recipe Title\",\"total_calories\":429,\"carbs_g\":47.3,\"fat_g\":10.2,\"protein_g\":38.5,\"rating\":4,\"instructions\":\"optional steps\",\"ingredients\":[{\"name\":\"Paneer\",\"amount\":\"100 g\",\"calories\":163}]}. Rating is out of 5."
+              "For recipes return: {\"kind\":\"recipe\",\"action\":\"add_recipe\",\"title\":\"Recipe Title\",\"instructions\":\"optional steps\",\"ingredients\":[{\"name\":\"Paneer\",\"amount\":\"100 g\"}]}."
             ].join(" ")
         },
         { role: "user", content: message }
@@ -183,7 +169,6 @@ async function applyTelegramAction(admin: any, action: TelegramAction): Promise<
   if (isChallengeAction(action)) return applyChallengeAction(admin, action);
   if (isMealPlanAction(action)) return applyMealPlanAction(admin, action);
   if (isTargetAction(action)) return applyHealthTargetAction(admin, action);
-  if (isRecipeRatingAction(action)) return applyRecipeRatingAction(admin, action);
   if (isRecipeAction(action)) return applyRecipeAction(admin, action);
   return applyPlannerAction(admin, action);
 }
@@ -388,27 +373,6 @@ async function applyHealthTargetAction(admin: any, action: HealthTargetAction): 
   return `Set ${action.metric} target to ${formatNumber(action.value)} ${unit}.`;
 }
 
-async function applyRecipeRatingAction(admin: any, action: RecipeRatingAction): Promise<string> {
-  const { data, error: selectError } = await admin.database
-    .from("recipes")
-    .select("id,title")
-    .ilike("title", `%${action.title}%`)
-    .limit(1);
-  if (selectError) throw selectError;
-
-  const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  if (!row?.id) return `No saved meal matched: ${action.title}.`;
-
-  const rating = clampRecipeRating(action.rating);
-  const { error } = await admin.database
-    .from("recipes")
-    .update({ rating })
-    .eq("id", row.id);
-  if (error) throw error;
-
-  return `Rated ${row.title}: ${formatNumber(rating)}/5.`;
-}
-
 async function applyRecipeAction(admin: any, action: RecipeAction): Promise<string> {
   const { data: existing, error: selectError } = await admin.database
     .from("recipes")
@@ -419,11 +383,6 @@ async function applyRecipeAction(admin: any, action: RecipeAction): Promise<stri
 
   const recipeRow = {
     title: action.title,
-    total_calories: action.total_calories,
-    carbs_g: action.carbs_g,
-    fat_g: action.fat_g,
-    protein_g: action.protein_g,
-    rating: action.rating,
     instructions: action.instructions || ""
   };
 
@@ -457,14 +416,14 @@ async function applyRecipeAction(admin: any, action: RecipeAction): Promise<stri
       recipe_id: recipeId,
       name: ingredient.name,
       amount: ingredient.amount,
-      calories: ingredient.calories ?? null,
       sort_order: index + 1
     }));
     const { error } = await admin.database.from("recipe_ingredients").insert(rows);
     if (error) throw error;
   }
 
-  return `Saved recipe: ${action.title} (${formatNumber(action.total_calories)} cal, C${formatNumber(action.carbs_g)} F${formatNumber(action.fat_g)} P${formatNumber(action.protein_g)}, ${formatNumber(action.rating)}/5).`;
+  const ingredientCount = action.ingredients.length;
+  return `Saved recipe: ${action.title}${ingredientCount > 0 ? ` (${ingredientCount} ingredient${ingredientCount === 1 ? "" : "s"})` : ""}.`;
 }
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<void> {
@@ -563,9 +522,6 @@ function parseMessageHeuristically(message: string): TelegramAction {
   const targetAction = parseTargetHeuristically(message);
   if (targetAction) return targetAction;
 
-  const recipeRatingAction = parseRecipeRatingHeuristically(message);
-  if (recipeRatingAction) return recipeRatingAction;
-
   const recipeAction = parseRecipeHeuristically(message);
   if (recipeAction) return recipeAction;
 
@@ -613,7 +569,7 @@ function parseMessageHeuristically(message: string): TelegramAction {
 }
 
 function validateTelegramAction(input: unknown): TelegramAction | null {
-  return validateChallengeAction(input) ?? validateMealPlanAction(input) ?? validateTargetAction(input) ?? validateRecipeRatingAction(input) ?? validateRecipeAction(input) ?? validatePlannerAction(input);
+  return validateChallengeAction(input) ?? validateMealPlanAction(input) ?? validateTargetAction(input) ?? validateRecipeAction(input) ?? validatePlannerAction(input);
 }
 
 function validatePlannerAction(input: unknown): PlannerAction | null {
@@ -695,13 +651,6 @@ function validateRecipeAction(input: unknown): RecipeAction | null {
   if (candidate.action !== "add_recipe") return null;
   const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
   if (!title) return null;
-  const totalCalories = Number(candidate.total_calories);
-  const carbs = Number(candidate.carbs_g);
-  const fat = Number(candidate.fat_g);
-  const protein = Number(candidate.protein_g);
-  const rating = candidate.rating == null ? 0 : Number(candidate.rating);
-  if (![totalCalories, carbs, fat, protein].every((value) => Number.isFinite(value) && value >= 0)) return null;
-  if (!Number.isFinite(rating) || rating < 0 || rating > 5) return null;
   const ingredients = Array.isArray(candidate.ingredients)
     ? candidate.ingredients
         .map((ingredient) => normalizeRecipeIngredient(ingredient))
@@ -711,29 +660,8 @@ function validateRecipeAction(input: unknown): RecipeAction | null {
     kind: "recipe",
     action: "add_recipe",
     title,
-    total_calories: totalCalories,
-    carbs_g: carbs,
-    fat_g: fat,
-    protein_g: protein,
-    rating: Math.round(rating * 10) / 10,
     instructions: typeof candidate.instructions === "string" ? candidate.instructions.trim() : "",
     ingredients
-  };
-}
-
-function validateRecipeRatingAction(input: unknown): RecipeRatingAction | null {
-  if (!input || typeof input !== "object") return null;
-  const candidate = input as Partial<RecipeRatingAction>;
-  if (candidate.kind !== "recipe_rating" && candidate.action !== "rate_recipe") return null;
-  if (candidate.action !== "rate_recipe") return null;
-  const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
-  const rating = Number(candidate.rating);
-  if (!title || !Number.isFinite(rating) || rating < 0 || rating > 5) return null;
-  return {
-    kind: "recipe_rating",
-    action: "rate_recipe",
-    title,
-    rating: clampRecipeRating(rating)
   };
 }
 
@@ -743,12 +671,7 @@ function normalizeRecipeIngredient(input: unknown): RecipeIngredientInput | null
   const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
   const amount = typeof candidate.amount === "string" ? candidate.amount.trim() : "";
   if (!name || !amount) return null;
-  const calories = candidate.calories == null ? null : Number(candidate.calories);
-  return {
-    name,
-    amount,
-    calories: calories == null || !Number.isFinite(calories) || calories < 0 ? null : calories
-  };
+  return { name, amount };
 }
 
 function parseTargetHeuristically(message: string): HealthTargetAction | null {
@@ -824,38 +747,10 @@ function parseMealPlanHeuristically(message: string): MealPlanAction | null {
   return { kind: "meal_plan", action, recipes };
 }
 
-function parseRecipeRatingHeuristically(message: string): RecipeRatingAction | null {
-  const normalized = message.trim().replace(/\s+/g, " ");
-  const lower = normalized.toLowerCase();
-  if (!/\b(rate|rating|rated|score|stars?)\b/.test(lower)) return null;
-
-  const rating =
-    extractMacroNumber(normalized, /\b(?:rate|rating|rated|score)\b\s*(?:is|to|as|:)?\s*([0-5](?:\.[0-9]+)?)\s*(?:\/\s*5|out of\s+5|stars?)?/i)
-    ?? extractMacroNumber(normalized, /([0-5](?:\.[0-9]+)?)\s*(?:\/\s*5|out of\s+5|stars?)\b/i)
-    ?? (/^(please\s+)?rate\b/i.test(normalized) ? extractMacroNumber(normalized, /\b([0-5](?:\.[0-9]+)?)\b(?!.*\b[0-5](?:\.[0-9]+)?\b)/i) : null);
-  if (rating == null || rating < 0 || rating > 5) return null;
-
-  const title = extractRecipeRatingTitle(normalized);
-  if (!title) return null;
-  return {
-    kind: "recipe_rating",
-    action: "rate_recipe",
-    title,
-    rating: clampRecipeRating(rating)
-  };
-}
-
 function parseRecipeHeuristically(message: string): RecipeAction | null {
   const normalized = message.trim().replace(/\s+/g, " ");
   const lower = normalized.toLowerCase();
   if (!/\b(recipe|meal)\b/.test(lower) || !/\b(add|save|create)\b/.test(lower)) return null;
-
-  const totalCalories = extractMacroNumber(normalized, /\b(?:calories|cal|kcal)\b\s*:?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i);
-  const carbs = extractMacroNumber(normalized, /\b(?:carbs|carbohydrates|c)\b\s*:?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i);
-  const fat = extractMacroNumber(normalized, /\b(?:fat|f)\b\s*:?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i);
-  const protein = extractMacroNumber(normalized, /\b(?:protein|prot|p)\b\s*:?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i);
-  const rating = extractMacroNumber(normalized, /\b(?:rating|rated|score)\b\s*:?\s*([0-5](?:\.[0-9]+)?)\s*(?:\/\s*5)?/i);
-  if ([totalCalories, carbs, fat, protein].some((value) => value === null)) return null;
 
   const title = extractRecipeTitle(normalized);
   if (!title) return null;
@@ -864,27 +759,9 @@ function parseRecipeHeuristically(message: string): RecipeAction | null {
     kind: "recipe",
     action: "add_recipe",
     title,
-    total_calories: totalCalories ?? 0,
-    carbs_g: carbs ?? 0,
-    fat_g: fat ?? 0,
-    protein_g: protein ?? 0,
-    rating: rating == null ? 0 : Math.max(0, Math.min(5, Math.round(rating * 10) / 10)),
     instructions: extractAfterLabel(normalized, "instructions") || extractAfterLabel(normalized, "directions") || "",
     ingredients: parseIngredientsList(extractAfterLabel(normalized, "ingredients"))
   };
-}
-
-function extractRecipeRatingTitle(message: string): string {
-  return message
-    .replace(/^(please\s+)?rate\s+(my\s+)?(meal|recipe)?\s*/i, "")
-    .replace(/^(please\s+)?(set|update|change)\s+(the\s+)?rating\s+(for|of|on)\s+/i, "")
-    .replace(/^(please\s+)?give\s+/i, "")
-    .replace(/\b(?:a\s+)?rating\s*(?:of|to|as|:)?\s*[0-5](?:\.[0-9]+)?\s*(?:\/\s*5|out of\s+5|stars?)?\b/i, "")
-    .replace(/\b(?:rate|rating|rated|score)\b\s*(?:is|to|as|:)?\s*[0-5](?:\.[0-9]+)?\s*(?:\/\s*5|out of\s+5|stars?)?\b/i, "")
-    .replace(/\b[0-5](?:\.[0-9]+)?\s*(?:\/\s*5|out of\s+5|stars?)\b/i, "")
-    .replace(/\b[0-5](?:\.[0-9]+)?\b\s*$/i, "")
-    .replace(/\s+(?:a\s+)?$/i, "")
-    .trim();
 }
 
 function extractMacroNumber(value: string, pattern: RegExp): number | null {
@@ -897,7 +774,7 @@ function extractMacroNumber(value: string, pattern: RegExp): number | null {
 function extractRecipeTitle(message: string): string {
   return message
     .replace(/^(please\s+)?(add|save|create)\s+(a\s+)?(new\s+)?(recipe|meal)\s*/i, "")
-    .split(/\b(?:calories|cal|kcal|carbs|carbohydrates|fat|protein|prot|ingredients|instructions|directions)\b/i)[0]
+    .split(/\b(?:ingredients|instructions|directions)\b/i)[0]
     .replace(/[:,-]\s*$/g, "")
     .trim();
 }
@@ -921,8 +798,7 @@ function parseIngredientsList(raw: string): RecipeIngredientInput[] {
       const match = item.match(/^(.+?)\s+([0-9][0-9./]*(?:\s*(?:g|gram|grams|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|cup|cups|medium|piece|pieces))?.*)$/i);
       return {
         name: (match ? match[1] : item).trim(),
-        amount: (match ? match[2] : "1 serving").trim(),
-        calories: null
+        amount: (match ? match[2] : "1 serving").trim()
       };
     })
     .filter((ingredient) => ingredient.name.length > 0 && ingredient.amount.length > 0);
@@ -934,10 +810,6 @@ function isTargetAction(action: TelegramAction): action is HealthTargetAction {
 
 function isRecipeAction(action: TelegramAction): action is RecipeAction {
   return (action as RecipeAction).kind === "recipe";
-}
-
-function isRecipeRatingAction(action: TelegramAction): action is RecipeRatingAction {
-  return (action as RecipeRatingAction).kind === "recipe_rating";
 }
 
 function isChallengeAction(action: TelegramAction): action is ChallengeAction {
@@ -954,10 +826,6 @@ function formatNumber(value: number): string {
 
 function roundOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
-}
-
-function clampRecipeRating(value: number): number {
-  return Math.max(0, Math.min(5, Math.round(value * 10) / 10));
 }
 
 function dashboardLocalDate(): string {

@@ -49,7 +49,7 @@ void renderLines(const Dashboard* dashboard, const char* status, EipsRenderer& e
   snprintf(sync, sizeof(sync), " Sync %.16s", dashboard->generated_at[0] ? dashboard->generated_at : "unknown");
   eips.addCardText(sync);
   char mode[64];
-  snprintf(mode, sizeof(mode), " Mode %s | tap refresh anytime", status);
+  snprintf(mode, sizeof(mode), " Mode %s", status);
   eips.addCardText(mode);
   eips.addRule();
   for (int i = 0; i < dashboard->list_count; i++) addList(eips, &dashboard->lists[i]);
@@ -205,12 +205,6 @@ int App::handlePendingTouch() {
     return 1;
   }
 
-  if (action == kTouchRefresh) {
-    fprintf(stderr, "touch=refresh\n");
-    g_manual_fetch_refresh = 1;
-    g_event_refresh = 1;
-    return 2;
-  }
 
   if (action == kTouchToggleItem) {
     const int next_done = touch_.pending_item_done ? 0 : 1;
@@ -323,7 +317,7 @@ int App::run(int argc, char** argv) {
       eips.addRule();
       eips.addCardText(" KINDLE DASHBOARD");
       eips.addCardText(" Dashboard unavailable");
-      eips.addCardText(" Check Wi-Fi or refresh later");
+      eips.addCardText(" Check Wi-Fi or try again later");
       eips.addRule();
       eips.flush();
     }
