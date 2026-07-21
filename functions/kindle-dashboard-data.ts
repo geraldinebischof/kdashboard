@@ -106,6 +106,10 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
     apiKey: requiredEnv("INSFORGE_API_KEY")
   });
 
+  // Sweep completed TO DO items from previous days before reading. Best-effort:
+  // a failed sweep must not break the dashboard render. See deleteStaleCompletedTodoItems.
+  await deleteStaleCompletedTodoItems(admin);
+
   const baseStarted = timeMs();
   const [itemsResult, recipesResult] = await Promise.all([
     admin.database
@@ -242,6 +246,56 @@ function shouldShowPlannerItem(item: PlannerItem, staleCompletedCutoff: number):
   const updatedAt = Date.parse(item.updated_at);
   if (!Number.isFinite(updatedAt)) return true;
   return updatedAt > staleCompletedCutoff;
+}
+
+// Delete completed TO DO items whose updated_at falls before the start of today
+// (in DASHBOARD_TIMEZONE). "Following day" cleanup: the moment the local date
+// rolls over, the next fetch sweeps yesterday's completed todos. Grocery and
+// not-done items are left alone. Best-effort — callers swallow errors so a
+// failed sweep never breaks the dashboard render.
+async function deleteStaleCompletedTodoItems(admin: ReturnType<typeof createAdminClient>): Promise<void> {
+  try {
+    const cutoffIso = new Date(startOfTodayUtcMs()).toISOString();
+    const { error } = await admin.database
+      .from("planner_items")
+      .delete()
+      .eq("list_key", "todo")
+      .eq("done", true)
+      .lt("updated_at", cutoffIso);
+    if (error) console.error("deleteStaleCompletedTodoItems:", error.message);
+  } catch (error) {
+    console.error("deleteStaleCompletedTodoItems:", error instanceof Error ? error.message : String(error));
+  }
+}
+
+// Epoch milliseconds of midnight in DASHBOARD_TIMEZONE for the current local
+// day. Reuses dashboardLocalDate() so the sweep cutoff and the generated_at
+// date can never disagree.
+function startOfTodayUtcMs(): number {
+  const timezone = Deno.env.get("DASHBOARD_TIMEZONE") || "Asia/Kolkata";
+  const localDate = dashboardLocalDate(); // YYYY-MM-DD in the project timezone
+  // The UTC instant we'd get by reading local midnight as UTC, shifted back by
+  // the timezone's offset, yields true local midnight as a UTC instant.
+  const midnightAsUtc = Date.parse(`${localDate}T00:00:00Z`);
+  return midnightAsUtc - timezoneOffsetMinutes(timezone, Date.now()) * 60000;
+}
+
+// Offset (in minutes) of `timezone` from UTC at the given UTC instant, computed
+// by formatting the instant in the zone and re-parsing the wall-clock parts as
+// if they were UTC. Positive east of UTC (e.g. +330 for Asia/Kolkata).
+function timezoneOffsetMinutes(timezone: string, utcMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  }).formatToParts(new Date(utcMs));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const wallClockAsUtc = Date.UTC(
+    Number(byType.year), Number(byType.month) - 1, Number(byType.day),
+    Number(byType.hour), Number(byType.minute), Number(byType.second)
+  );
+  return Math.round((wallClockAsUtc - utcMs) / 60000);
 }
 
 function corsHeaders(): HeadersInit {
