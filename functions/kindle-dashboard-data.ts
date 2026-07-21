@@ -1,6 +1,6 @@
 import { createAdminClient } from "npm:@insforge/sdk";
 
-type ListKey = "grocery" | "todo";
+type ListKey = "grocery" | "todo" | "daily_chores";
 
 type PlannerItem = {
   id: string;
@@ -72,7 +72,8 @@ type DashboardPayload = {
 
 const LIST_TITLES: Record<ListKey, string> = {
   todo: "To Do",
-  grocery: "Grocery"
+  grocery: "Grocery",
+  daily_chores: "Daily Chores"
 };
 const COMPLETED_ITEM_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -109,13 +110,16 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
   // Sweep completed TO DO items from previous days before reading. Best-effort:
   // a failed sweep must not break the dashboard render. See deleteStaleCompletedTodoItems.
   await deleteStaleCompletedTodoItems(admin);
+  // Reset completed DAILY CHORES items from previous days to not-done (daily
+  // chores recur, so they reset rather than delete). See resetDailyChoresItems.
+  await resetDailyChoresItems(admin);
 
   const baseStarted = timeMs();
   const [itemsResult, recipesResult] = await Promise.all([
     admin.database
       .from("planner_items")
       .select("id,list_key,text,done,created_at,updated_at")
-      .in("list_key", ["todo", "grocery"])
+      .in("list_key", ["todo", "grocery", "daily_chores"])
       .order("created_at", { ascending: false }),
     admin.database
       .from("recipes")
@@ -156,7 +160,7 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
   const payloadWithoutVersion = {
     ok: true as const,
     generated_at: `${dashboardLocalDate()}T00:00:00+05:30`,
-    lists: (["todo", "grocery"] as const).map((key) => ({
+    lists: (["todo", "grocery", "daily_chores"] as const).map((key) => ({
       key,
       title: LIST_TITLES[key],
       items: plannerItems
@@ -265,6 +269,27 @@ async function deleteStaleCompletedTodoItems(admin: ReturnType<typeof createAdmi
     if (error) console.error("deleteStaleCompletedTodoItems:", error.message);
   } catch (error) {
     console.error("deleteStaleCompletedTodoItems:", error instanceof Error ? error.message : String(error));
+  }
+}
+
+// Reset DAILY CHORES items marked done before the start of today back to
+// not-done. Unlike todo (which deletes completed items the next day), daily
+// chores recur, so they reset and reappear unchecked each morning. Best-effort
+// — a failed reset never breaks the dashboard render. The updated_at trigger
+// bumps updated_at on the reset write, which is correct: the item reads as
+// "reset today" and stays visible.
+async function resetDailyChoresItems(admin: ReturnType<typeof createAdminClient>): Promise<void> {
+  try {
+    const cutoffIso = new Date(startOfTodayUtcMs()).toISOString();
+    const { error } = await admin.database
+      .from("planner_items")
+      .update({ done: false })
+      .eq("list_key", "daily_chores")
+      .eq("done", true)
+      .lt("updated_at", cutoffIso);
+    if (error) console.error("resetDailyChoresItems:", error.message);
+  } catch (error) {
+    console.error("resetDailyChoresItems:", error instanceof Error ? error.message : String(error));
   }
 }
 

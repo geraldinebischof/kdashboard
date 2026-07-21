@@ -179,6 +179,7 @@ const char* displayListTitle(const List* list) {
   if (!list) return "";
   if (strcmp(list->key, "todo") == 0) return "TO DO";
   if (strcmp(list->key, "grocery") == 0) return "GROCERY";
+  if (strcmp(list->key, "daily_chores") == 0) return "DAILY CHORES";
   return list->title[0] ? list->title : list->key;
 }
 

@@ -421,6 +421,75 @@ void Canvas::drawPgmImageCover(int x, int y, int w, int h, const char* primary_p
   }
 }
 
+void Canvas::drawPgmImageContain(int x, int y, int w, int h, const char* primary_path, const char* fallback_path, int invert, PgmCache& cache) {
+  int image_w = 0;
+  int image_h = 0;
+  const unsigned char* pixels = cache.load(primary_path, fallback_path, &image_w, &image_h);
+  if (!pixels) {
+    strokeRect(x, y, w, h, 2, 0);
+    drawTextCentered(x + w / 2, y + h / 2 - 12, w - 20, "IMAGE", 3, 0);
+    return;
+  }
+
+  fillRect(x, y, w, h, invert ? 0 : 255);
+  // Auto-trim near-white borders (pixels > 246) so the image's own content
+  // drives the aspect ratio, matching drawPgmImageCover.
+  int content_left = 0;
+  int content_top = 0;
+  int content_right = image_w;
+  int content_bottom = image_h;
+  int found_content = 0;
+  for (int yy = 0; yy < image_h; yy++) {
+    for (int xx = 0; xx < image_w; xx++) {
+      const unsigned char value = pixels[yy * image_w + xx];
+      if (value > 246) continue;
+      if (!found_content) {
+        content_left = xx;
+        content_right = xx + 1;
+        content_top = yy;
+        content_bottom = yy + 1;
+        found_content = 1;
+      } else {
+        if (xx < content_left) content_left = xx;
+        if (xx + 1 > content_right) content_right = xx + 1;
+        if (yy < content_top) content_top = yy;
+        if (yy + 1 > content_bottom) content_bottom = yy + 1;
+      }
+    }
+  }
+  if (!found_content || content_right <= content_left || content_bottom <= content_top) {
+    content_left = 0;
+    content_top = 0;
+    content_right = image_w;
+    content_bottom = image_h;
+  }
+  const int source_w = content_right - content_left;
+  const int source_h = content_bottom - content_top;
+
+  // Fit the entire trimmed image inside the box (contain), letterboxing the
+  // overflow dimension. No content is cropped.
+  int dst_w = w;
+  int dst_h = h;
+  if (source_w * h > w * source_h) {
+    dst_h = (w * source_h) / source_w;
+  } else {
+    dst_w = (h * source_w) / source_h;
+  }
+  const int dst_x = x + (w - dst_w) / 2;
+  const int dst_y = y + (h - dst_h) / 2;
+
+  for (int yy = 0; yy < dst_h; yy++) {
+    const int source_y = content_top + (yy * source_h) / dst_h;
+    if (source_y < 0 || source_y >= image_h) continue;
+    for (int xx = 0; xx < dst_w; xx++) {
+      const int source_x = content_left + (xx * source_w) / dst_w;
+      if (source_x < 0 || source_x >= image_w) continue;
+      const unsigned char value = pixels[source_y * image_w + source_x];
+      setPixel(dst_x + xx, dst_y + yy, invert ? static_cast<unsigned char>(255 - value) : value);
+    }
+  }
+}
+
 void Canvas::drawRecipeLocalImage(int x, int y, int w, int h, const RecipeRecord* recipe, int invert, PgmCache& cache) {
   char primary[192];
   char fallback[192];

@@ -1,6 +1,6 @@
 import { createAdminClient } from "npm:@insforge/sdk";
 
-type ListKey = "grocery" | "workout" | "meal" | "todo";
+type ListKey = "grocery" | "workout" | "meal" | "todo" | "daily_chores";
 
 type PlannerAction = {
   kind?: "planner";
@@ -147,7 +147,7 @@ async function parseTelegramMessage(message: string): Promise<TelegramAction | n
           content:
             [
               "Parse one Telegram dashboard message into strict JSON.",
-              "For planner/list updates return: {\"kind\":\"planner\",\"action\":\"add|complete|uncomplete|delete|clear\",\"list_key\":\"grocery|workout|meal|todo\",\"items\":[\"short item\"],\"all_lists\":false}. Use list_key \"todo\" for to-do items/tasks. Use [] only for clear.",
+              "For planner/list updates return: {\"kind\":\"planner\",\"action\":\"add|complete|uncomplete|delete|clear\",\"list_key\":\"grocery|workout|meal|todo|daily_chores\",\"items\":[\"short item\"],\"all_lists\":false}. Use list_key \"todo\" for to-do items/tasks and \"daily_chores\" for recurring daily chores. Use [] only for clear.",
               "For health targets return: {\"kind\":\"target\",\"action\":\"set_target\",\"metric\":\"steps|calories\",\"value\":12000,\"unit\":\"steps|kcal\"}.",
               "For 75 day challenge check-ins return: {\"kind\":\"challenge\",\"action\":\"add_water|set_sleep|add_workout\",\"value\":1}. Treat XL water as 1 liter, sleep value as hours, and workout value as one completed workout.",
               "For today's meal plan made from saved recipes return: {\"kind\":\"meal_plan\",\"action\":\"add_meal|set_meal_plan|clear_meal_plan\",\"recipes\":[\"Saved Recipe Title\"]}. Use add_meal for adding/include/put another meal; use set_meal_plan only when replacing the whole plan.",
@@ -356,7 +356,9 @@ async function applyPlannerAction(admin: any, action: PlannerAction): Promise<st
 }
 
 function plannerListLabel(listKey: ListKey): string {
-  return listKey === "todo" ? "to-do" : listKey;
+  if (listKey === "todo") return "to-do";
+  if (listKey === "daily_chores") return "daily chores";
+  return listKey;
 }
 
 async function applyHealthTargetAction(admin: any, action: HealthTargetAction): Promise<string> {
@@ -537,10 +539,11 @@ const LIST_ALIASES: Record<ListKey, string[]> = {
   grocery: ["grocery", "groceries", "shopping", "market"],
   workout: ["workout", "exercise", "training", "gym"],
   meal: ["meal", "meals", "menu", "food"],
-  todo: ["todo", "to-do", "task", "tasks", "errand", "errands"]
+  todo: ["todo", "to-do", "task", "tasks", "errand", "errands"],
+  daily_chores: ["daily chore", "daily chores", "chores", "chore", "daily routine", "routine"]
 };
 
-const LIST_KEYS: ListKey[] = ["grocery", "workout", "meal", "todo"];
+const LIST_KEYS: ListKey[] = ["grocery", "workout", "meal", "todo", "daily_chores"];
 
 function detectListKey(message: string): ListKey {
   const lower = message.toLowerCase();
@@ -585,7 +588,7 @@ function parseMessageHeuristically(message: string): TelegramAction {
   const withoutActionFirst = normalized
     .replace(/^(please\s+)?(add|put|include|buy|get|need|mark|check off|complete|completed|done|undo|uncheck|delete|remove|drop|clear|empty|reset)\s+/i, "")
     .replace(/\s+(done|complete|completed)$/i, "")
-    .replace(/\s+(to|in|on|from)\s+(my\s+)?(grocery|groceries|shopping|market|workout|exercise|training|gym|meal|meals|menu|food|todo|to-do|task|tasks|errand|errands)(\s+list|\s+plan)?$/i, "")
+    .replace(/\s+(to|in|on|from)\s+(my\s+)?(grocery|groceries|shopping|market|workout|exercise|training|gym|meal|meals|menu|food|todo|to-do|task|tasks|errand|errands|daily chore|daily chores|chores|chore|daily routine|routine)(\s+list|\s+plan)?$/i, "")
     .replace(/\s+(to|in|on|from)$/i, "")
     .trim();
   const withoutAction = stripListWords(withoutActionFirst, listKey)

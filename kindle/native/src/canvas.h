@@ -42,6 +42,10 @@ class Canvas {
   // Draw a PGM (loaded via `cache`) scaled to cover the box, trimming near-white
   // borders. `invert` flips grayscale for dark-mode rendering.
   void drawPgmImageCover(int x, int y, int w, int h, const char* primary_path, const char* fallback_path, int invert, PgmCache& cache);
+  // Draw a PGM scaled to fit entirely inside the box (letterbox), trimming
+  // near-white borders first. Nothing is cropped. `invert` flips grayscale for
+  // dark-mode rendering.
+  void drawPgmImageContain(int x, int y, int w, int h, const char* primary_path, const char* fallback_path, int invert, PgmCache& cache);
   // Resolve a recipe's photo path and draw it via drawPgmImageCover.
   void drawRecipeLocalImage(int x, int y, int w, int h, const RecipeRecord* recipe, int invert, PgmCache& cache);
 };

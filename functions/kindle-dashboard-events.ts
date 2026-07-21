@@ -1,6 +1,6 @@
 import { createAdminClient } from "npm:@insforge/sdk";
 
-type ListKey = "grocery" | "todo";
+type ListKey = "grocery" | "todo" | "daily_chores";
 
 type PlannerItem = {
   id: string;
@@ -108,7 +108,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     admin.database
       .from("planner_items")
       .select("id,list_key,text,done,created_at,updated_at")
-      .in("list_key", ["todo", "grocery"])
+      .in("list_key", ["todo", "grocery", "daily_chores"])
       .order("created_at", { ascending: false }),
     admin.database
       .from("recipes")

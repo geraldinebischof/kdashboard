@@ -35,6 +35,8 @@ void Navigator::applyInitialView(const char* view) {
     openList(0);
   } else if (strcmp(view, "grocery") == 0) {
     openList(1);
+  } else if (strcmp(view, "daily_chores") == 0) {
+    openList(2);
   }
 }
 

@@ -81,21 +81,19 @@ void drawCookbookTile(Canvas& canvas, int x, int y, int w, int h, RenderContext&
   canvas.strokeRoundedRect(x, y, w, h, tile_radius, 3, 0);
   Rect tile_rect = {x, y, w, h};
   ctx.touch.add(tile_rect, kTouchOpenRecipes, -1, -1, "", 0);
-  canvas.line(x + 10, y + 52, x + w - 10, y + 52, 2, 0);
-  canvas.drawTextCentered(x + w / 2, y + 14, w - 24, "COOKBOOK", 4, 0);
 
-  const int icon_cx = x + w / 2;
-  const int available_top = y + 66;
-  const int available_bottom = y + h - 40;
-  const int available_h = available_bottom - available_top;
-  if (available_h > 60) {
-    int icon_size = available_h < 120 ? available_h : 120;
-    if (icon_size > w - 60) icon_size = w - 60;
-    const int icon_x = icon_cx - icon_size / 2;
-    const int icon_y = available_top + (available_h - icon_size) / 2;
-    canvas.drawPgmImageCover(icon_x, icon_y, icon_size, icon_size,
-                       kCookbookIconPath, kCookbookIconLocalPath,
-                       ctx.invert_images, ctx.pgm_cache);
+  // Fit the whole cookbook image inside the tile (contain, not cover) so its
+  // tall book shape isn't cropped to fill the box. A small margin keeps it off
+  // the rounded border.
+  const int margin = 8;
+  const int img_x = x + margin;
+  const int img_y = y + margin;
+  const int img_w = w - 2 * margin;
+  const int img_h = h - 2 * margin;
+  if (img_w > 0 && img_h > 0) {
+    canvas.drawPgmImageContain(img_x, img_y, img_w, img_h,
+                        kCookbookIconPath, kCookbookIconLocalPath,
+                        ctx.invert_images, ctx.pgm_cache);
   }
 }
 
@@ -168,20 +166,27 @@ void HomePanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
   const int footer_h = 44;
   const int lists_y = shell_y + 10 + header_h + gap;
   const int lists_h = shell_y + shell_h - lists_y - footer_h - gap - 10;
+  // 2×2 home grid: top row = TO DO (0) + GROCERY (1), bottom row = DAILY
+  // CHORES (2, if present) + COOKBOOK tile. Even quadrants so every card has
+  // the same footprint; the layout degrades cleanly when fewer lists exist.
   const int list_w = (shell_w - 20 - gap) / 2;
+  const int row_h = (lists_h - gap) / 2;
+  const int left_x = shell_x + 10;
+  const int right_x = left_x + list_w + gap;
+  const int top_y = lists_y;
+  const int bottom_y = lists_y + row_h + gap;
 
   if (dashboard.list_count > 0) {
-    drawListCard(canvas, shell_x + 10, lists_y, list_w, lists_h, &dashboard.lists[0], 0, ctx);
+    drawListCard(canvas, left_x, top_y, list_w, row_h, &dashboard.lists[0], 0, ctx);
   }
   if (dashboard.list_count > 1) {
-    const int right_x = shell_x + 10 + list_w + gap;
-    int cookbook_side = list_w;
-    if (lists_h < cookbook_side + 128) cookbook_side = lists_h - 128;
-    if (cookbook_side < 160) cookbook_side = 160;
-    const int grocery_h = lists_h - cookbook_side - gap;
-    drawCookbookTile(canvas, right_x, lists_y, list_w, cookbook_side, ctx);
-    drawListCard(canvas, right_x, lists_y + cookbook_side + gap, list_w, grocery_h, &dashboard.lists[1], 1, ctx);
+    drawListCard(canvas, right_x, top_y, list_w, row_h, &dashboard.lists[1], 1, ctx);
   }
+  if (dashboard.list_count > 2) {
+    drawListCard(canvas, left_x, bottom_y, list_w, row_h, &dashboard.lists[2], 2, ctx);
+  }
+  // Cookbook lives in the bottom-right quadrant, opposite DAILY CHORES.
+  drawCookbookTile(canvas, right_x, bottom_y, list_w, row_h, ctx);
 
   canvas.doubleRoundedRect(shell_x + 10, shell_y + shell_h - footer_h - 10, shell_w - 20, footer_h, 16, 0);
   canvas.drawTextClipped(shell_x + 28, shell_y + shell_h - footer_h - 2, shell_w - 56, "TELEGRAM KEEPS LISTS IN SYNC // TAP REFRESH ANYTIME", 3, 0);

@@ -18,6 +18,14 @@
         { "id": "3", "text": "Milk", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
         { "id": "4", "text": "Eggs", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" }
       ]
+    },
+    {
+      "key": "daily_chores",
+      "title": "Daily Chores",
+      "items": [
+        { "id": "5", "text": "Take vitamins", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "6", "text": "Water plants", "done": true, "updated_at": "2026-06-28T07:30:00.000Z" }
+      ]
     }
   ],
   "recipes": [

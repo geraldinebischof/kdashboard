@@ -12,7 +12,8 @@ const schemaMigrations = [
   "migrations/20260629162000_create-meal-plan-entries.sql",
   "migrations/20260701000000_add-recipe-rating.sql",
   "migrations/20260701001000_recipe-rating-out-of-five.sql",
-  "migrations/20260707000000_enable_rls_private_tables.sql"
+  "migrations/20260707000000_enable_rls_private_tables.sql",
+  "migrations/20260721000000_add_daily_chores_list.sql"
 ];
 
 const sampleDataMigrations = [

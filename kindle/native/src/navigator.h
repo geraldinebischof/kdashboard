@@ -19,7 +19,7 @@ class Navigator {
   void render(Canvas& canvas, const Dashboard& dashboard, const char* status, RenderContext& ctx) const;
 
   // Apply the initial view requested on the command line ("cookbook", "recipe",
-  // "todo", "grocery"); unknown/empty leaves the current view.
+  // "todo", "grocery", "daily_chores"); unknown/empty leaves the current view.
   void applyInitialView(const char* view);
 
   void goHome();
