@@ -7,7 +7,7 @@
 ALTER TABLE planner_lists DROP CONSTRAINT IF EXISTS planner_lists_key_check;
 ALTER TABLE planner_lists
   ADD CONSTRAINT planner_lists_key_check
-  CHECK (key IN ('grocery', 'workout', 'meal', 'todo', 'daily_chores'));
+  CHECK (key IN ('grocery', 'todo', 'daily_chores'));
 
 -- Seed the new list. sort_order 5 is free; on-screen position is driven by the
 -- payload array in kindle-dashboard-data.ts, not by sort_order.
