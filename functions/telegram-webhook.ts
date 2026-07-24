@@ -149,6 +149,15 @@ export default async function(req: Request): Promise<Response> {
     return jsonResponse({ ok: true, handled: "pending_add" });
   }
 
+  // Pending recipe command: a bare /recipe (or /editrecipe, /deleterecipe) tap
+  // stashes the command and waits for the title. The next plain-text message
+  // is the title, routed to that command. Same reason as above: without this,
+  // the title would fall through to the free-text parser and land in to-do.
+  const pendingRecipeHandled = await handlePendingRecipeCommand(admin, chatId, text);
+  if (pendingRecipeHandled) {
+    return jsonResponse({ ok: true, handled: "pending_recipe_command" });
+  }
+
   // Chat-form recipe flow takes priority over the one-shot parser. /newrecipe
   // starts a draft; any message while a draft is active is routed to the draft
   // handler. Only when no draft exists does the message reach the normal
@@ -572,21 +581,22 @@ async function handleSlashCommand(admin: any, chatId: string, text: string): Pro
 
   if (command === "recipe") {
     if (!args) {
-      sendTelegramMessageInBackground(chatId, "Which recipe? e.g. /recipe Pancakes");
+      // Telegram's / menu auto-sends on tap, so a bare /recipe stashes the
+      // command and waits for the title — same tap-then-type pattern as
+      // /addgrocery. Without this, the next message (the title) would fall
+      // through to the free-text parser.
+      await setPendingRecipeCommand(admin, chatId, "recipe");
+      sendTelegramMessageInBackground(chatId, "Which recipe? e.g. Pancakes (or type \"cancel\")");
       return true;
     }
-    const recipe = await findRecipeByTitle(admin, args);
-    if (!recipe) {
-      sendTelegramMessageInBackground(chatId, recipeNotFound(args));
-      return true;
-    }
-    sendTelegramMessageInBackground(chatId, summarizeRecipe(recipe));
+    await replyViewRecipe(admin, chatId, args);
     return true;
   }
 
   if (command === "editrecipe") {
     if (!args) {
-      sendTelegramMessageInBackground(chatId, "Which recipe? e.g. /editrecipe Pancakes");
+      await setPendingRecipeCommand(admin, chatId, "editrecipe");
+      sendTelegramMessageInBackground(chatId, "Which recipe should I edit? e.g. Pancakes (or type \"cancel\")");
       return true;
     }
     await startEditRecipeDraft(admin, chatId, args);
@@ -595,17 +605,11 @@ async function handleSlashCommand(admin: any, chatId: string, text: string): Pro
 
   if (command === "deleterecipe") {
     if (!args) {
-      sendTelegramMessageInBackground(chatId, "Which recipe? e.g. /deleterecipe Pancakes");
+      await setPendingRecipeCommand(admin, chatId, "deleterecipe");
+      sendTelegramMessageInBackground(chatId, "Which recipe should I delete? e.g. Pancakes (or type \"cancel\")");
       return true;
     }
-    const recipe = await findRecipeByTitle(admin, args);
-    if (!recipe) {
-      sendTelegramMessageInBackground(chatId, recipeNotFound(args));
-      return true;
-    }
-    const { error } = await admin.database.from("recipes").delete().eq("id", recipe.id);
-    if (error) throw error;
-    sendTelegramMessageInBackground(chatId, `Deleted recipe: ${recipe.title}.`);
+    await replyDeleteRecipe(admin, chatId, args);
     return true;
   }
 
@@ -655,7 +659,9 @@ async function handleSlashCommand(admin: any, chatId: string, text: string): Pro
 // list. "cancel" (handled by the dispatcher) clears the pending state.
 async function handlePendingAdd(admin: any, chatId: string, text: string): Promise<boolean> {
   const pending = await getPendingAdd(admin, chatId);
-  if (!pending) return false;
+  // A recipe-command row (command set, list_key null) is handled by
+  // handlePendingRecipeCommand below — don't claim it as a list add.
+  if (!pending || !pending.list_key) return false;
 
   const lower = text.toLowerCase().trim();
   if (lower === "cancel" || lower === "/cancel" || lower === "nevermind" || lower === "never mind") {
@@ -693,7 +699,11 @@ async function getPendingAdd(admin: any, chatId: string): Promise<{ list_key: st
     .limit(1);
   if (error) throw error;
   const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  return row ? { list_key: String(row.list_key) } : null;
+  // Preserve a genuine null list_key (a pending recipe-command row) rather than
+  // coercing it to the string "null" — which is truthy and would slip past the
+  // caller's null check. Rows without a list_key belong to handlePendingRecipeCommand.
+  if (!row || row.list_key === null || row.list_key === undefined) return null;
+  return { list_key: String(row.list_key) };
 }
 
 async function setPendingAdd(admin: any, chatId: string, listKey: ListKey): Promise<void> {
@@ -709,6 +719,81 @@ async function clearPendingAdd(admin: any, chatId: string): Promise<void> {
     .delete()
     .eq("chat_id", chatId);
   if (error) throw error;
+}
+
+// ─── Pending recipe command flow (bare /recipe, /editrecipe, /deleterecipe) ─
+// Same tap-then-type pattern as the pending add flow. Telegram's / menu
+// auto-sends a bare command on tap, so the intended command is stashed in
+// pending_adds (with `command` set, list_key null). The next plain-text
+// message is the recipe title and is routed to the matching command. Reuses
+// the pending_adds table (one row per chat) so it naturally replaces any
+// pending list-add and vice versa.
+async function handlePendingRecipeCommand(admin: any, chatId: string, text: string): Promise<boolean> {
+  const command = await getPendingRecipeCommand(admin, chatId);
+  if (!command) return false;
+
+  const lower = text.toLowerCase().trim();
+  if (lower === "cancel" || lower === "/cancel" || lower === "nevermind" || lower === "never mind") {
+    await clearPendingAdd(admin, chatId);
+    sendTelegramMessageInBackground(chatId, appendCatalog("Cancelled."));
+    return true;
+  }
+
+  const title = text.trim();
+  if (!title) return false; // let it fall through normally
+
+  await clearPendingAdd(admin, chatId);
+  if (command === "recipe") {
+    await replyViewRecipe(admin, chatId, title);
+  } else if (command === "editrecipe") {
+    await startEditRecipeDraft(admin, chatId, title);
+  } else if (command === "deleterecipe") {
+    await replyDeleteRecipe(admin, chatId, title);
+  }
+  return true;
+}
+
+async function getPendingRecipeCommand(admin: any, chatId: string): Promise<string | null> {
+  const { data, error } = await admin.database
+    .from("pending_adds")
+    .select("command")
+    .eq("chat_id", chatId)
+    .limit(1);
+  if (error) throw error;
+  const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+  if (!row || row.command === null || row.command === undefined) return null;
+  return String(row.command);
+}
+
+async function setPendingRecipeCommand(admin: any, chatId: string, command: string): Promise<void> {
+  const { error } = await admin.database
+    .from("pending_adds")
+    .upsert({ chat_id: chatId, command, list_key: null }, { onConflict: "chat_id" });
+  if (error) throw error;
+}
+
+// Resolves a recipe by title and replies with it. Shared by /recipe (with and
+// without args) and the pending recipe-command flow.
+async function replyViewRecipe(admin: any, chatId: string, title: string): Promise<void> {
+  const recipe = await findRecipeByTitle(admin, title);
+  if (!recipe) {
+    sendTelegramMessageInBackground(chatId, recipeNotFound(title));
+    return;
+  }
+  sendTelegramMessageInBackground(chatId, summarizeRecipe(recipe));
+}
+
+// Resolves a recipe by title and deletes it (ingredients cascade). Shared by
+// /deleterecipe (with and without args) and the pending recipe-command flow.
+async function replyDeleteRecipe(admin: any, chatId: string, title: string): Promise<void> {
+  const recipe = await findRecipeByTitle(admin, title);
+  if (!recipe) {
+    sendTelegramMessageInBackground(chatId, recipeNotFound(title));
+    return;
+  }
+  const { error } = await admin.database.from("recipes").delete().eq("id", recipe.id);
+  if (error) throw error;
+  sendTelegramMessageInBackground(chatId, `Deleted recipe: ${recipe.title}.`);
 }
 
 // ─── Chat-form recipe draft flow (/newrecipe) ──────────────────────────────
@@ -1025,6 +1110,10 @@ function parseRecipeTargetedEdit(normalized: string): TelegramAction | null {
   if (addMatch) {
     const ingredient = parseIngredientLine(addMatch[1].trim());
     if (!ingredient) return null;
+    // Yield to the planner when the destination is a planner list ("add milk to
+    // grocery"), not a recipe title. Without this guard the planner add is
+    // stolen and reported as "No recipe called grocery".
+    if (hasExplicitList(addMatch[2])) return null;
     return { kind: "recipe", action: "add_ingredient", title: addMatch[2].trim(), ingredient };
   }
 
@@ -1033,6 +1122,9 @@ function parseRecipeTargetedEdit(normalized: string): TelegramAction | null {
   if (removeMatch) {
     const name = removeMatch[1].trim();
     if (!name) return null;
+    // Same guard as above: "remove eggs from todo" is a planner delete, not a
+    // recipe ingredient removal.
+    if (hasExplicitList(removeMatch[2])) return null;
     return { kind: "recipe", action: "remove_ingredient", title: removeMatch[2].trim(), name };
   }
 

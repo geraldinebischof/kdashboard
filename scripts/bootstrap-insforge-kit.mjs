@@ -12,7 +12,8 @@ const schemaMigrations = [
   "migrations/20260722120000_create-recipe-drafts.sql",
   "migrations/20260723120000_drop-workout-challenge-health-mealplan.sql",
   "migrations/20260724000000_create-pending-adds.sql",
-  "migrations/20260724130000_add-recipe-draft-mode.sql"
+  "migrations/20260724130000_add-recipe-draft-mode.sql",
+  "migrations/20260724140000_pending-adds-recipe-commands.sql"
 ];
 
 const sampleDataMigrations = [
