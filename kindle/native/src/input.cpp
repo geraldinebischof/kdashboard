@@ -73,7 +73,9 @@ int InputManager::applyTouchWithDebounce() {
   const int x = x_;
   const int y = y_;
 
-  if (x >= w - 280 && y >= kKindleStatusBarHeight && y <= kKindleStatusBarHeight + 160) {
+  // EXIT button now lives at the far-left of the home panel header. Mirror
+  // that zone here as the fallback hit-test for the button.
+  if (x <= 240 && y >= kKindleStatusBarHeight && y <= kKindleStatusBarHeight + 160) {
     touch_.pending_action = kTouchExit;
     touch_.setPendingRect(exitButtonRectForScreen(w, h));
   } else if (!touch_.applyTouchAt(x, y) &&

@@ -28,12 +28,18 @@ class Navigator {
   void openRecipe(int recipe_index);
   void openRecipes();
 
+  // Per-item delete confirmation overlay (ListPanel only). -1 = dismissed.
+  void requestDeleteItem(int item_index) { delete_item_index_ = item_index; }
+  void cancelDeleteItem() { delete_item_index_ = -1; }
+  int deleteItemIndex() const { return delete_item_index_; }
+
  private:
   const Panel* activePanel(const Dashboard& dashboard) const;
 
   View current_ = View::Home;
   int list_index_ = -1;
   int recipe_index_ = -1;
+  int delete_item_index_ = -1;
 
   HomePanel home_panel_;
   ListPanel list_panel_;

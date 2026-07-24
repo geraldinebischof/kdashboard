@@ -13,6 +13,7 @@ void initOptions(Options* options) {
   copyText(options->url, sizeof(options->url), kDefaultUrl);
   copyText(options->events_url, sizeof(options->events_url), kDefaultEventsUrl);
   copyText(options->toggle_url, sizeof(options->toggle_url), kDefaultToggleUrl);
+  options->delete_url[0] = '\0';
   options->read_token[0] = '\0';
   options->toggle_token[0] = '\0';
   copyText(options->cache, sizeof(options->cache), kDefaultCache);
@@ -34,6 +35,7 @@ int parseOptions(int argc, char** argv, Options* options) {
     if (strcmp(argv[i], "--url") == 0 && i + 1 < argc) copyText(options->url, sizeof(options->url), argv[++i]);
     else if (strcmp(argv[i], "--events-url") == 0 && i + 1 < argc) copyText(options->events_url, sizeof(options->events_url), argv[++i]);
     else if (strcmp(argv[i], "--toggle-url") == 0 && i + 1 < argc) copyText(options->toggle_url, sizeof(options->toggle_url), argv[++i]);
+    else if (strcmp(argv[i], "--delete-url") == 0 && i + 1 < argc) copyText(options->delete_url, sizeof(options->delete_url), argv[++i]);
     else if (strcmp(argv[i], "--read-token") == 0 && i + 1 < argc) copyText(options->read_token, sizeof(options->read_token), argv[++i]);
     else if (strcmp(argv[i], "--toggle-token") == 0 && i + 1 < argc) copyText(options->toggle_token, sizeof(options->toggle_token), argv[++i]);
     else if (strcmp(argv[i], "--cache") == 0 && i + 1 < argc) copyText(options->cache, sizeof(options->cache), argv[++i]);
@@ -61,7 +63,7 @@ int parseOptions(int argc, char** argv, Options* options) {
     }
     else if (strcmp(argv[i], "--save-pgm") == 0 && i + 1 < argc) copyText(options->save_pgm, sizeof(options->save_pgm), argv[++i]);
     else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-      printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images]\n", argv[0]);
+      printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--delete-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images]\n", argv[0]);
       printf("       %s --render PATH [--view cookbook|recipe|todo|grocery|daily_chores] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
       exit(0);
     } else {

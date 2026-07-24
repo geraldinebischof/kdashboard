@@ -214,6 +214,27 @@ int App::handlePendingTouch() {
     return 1;
   }
 
+  if (action == kTouchDeleteItem) {
+    fprintf(stderr, "touch=delete-list-item-request index=%d id=%s\n", touch_.pending_item_index, touch_.pending_item_id);
+    navigator_.requestDeleteItem(touch_.pending_item_index);
+    return 1;
+  }
+
+  if (action == kTouchCancelDelete) {
+    fprintf(stderr, "touch=delete-list-item-cancel id=%s\n", touch_.pending_item_id);
+    navigator_.cancelDeleteItem();
+    return 1;
+  }
+
+  if (action == kTouchConfirmDelete) {
+    fprintf(stderr, "touch=delete-list-item-confirm id=%s\n", touch_.pending_item_id);
+    navigator_.cancelDeleteItem();
+    removeCachedItem(options_.cache, touch_.pending_item_id);
+    const char* delete_url = options_.delete_url[0] ? options_.delete_url : options_.toggle_url;
+    client_.postDeleteItemAsync(delete_url, options_.toggle_token, touch_.pending_item_id);
+    return 1;
+  }
+
   return 0;
 }
 

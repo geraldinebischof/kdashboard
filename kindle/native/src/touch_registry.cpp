@@ -40,6 +40,7 @@ int TouchRegionRegistry::applyTouchAt(int x, int y) {
     pending_action = region->action;
     pending_list_index = region->list_index;
     pending_recipe_index = region->item_index;
+    pending_item_index = region->item_index;
     util::copyText(pending_item_id, sizeof(pending_item_id), region->item_id);
     pending_item_done = region->item_done;
     setPendingRect(region->rect);

@@ -14,6 +14,10 @@ class DashboardClient {
   // request was launched.
   int postToggleItemAsync(const char* toggle_url, const char* toggle_token, const char* item_id, int done);
 
+  // Fire-and-forget POST to delete an item by id. Returns 1 if the background
+  // request was launched. Reuses the toggle URL + token (single shared secret).
+  int postDeleteItemAsync(const char* toggle_url, const char* toggle_token, const char* item_id);
+
   // Spawn the detached SSE watcher thread (no-op if events_url is empty).
   void startEventWatcher(const char* events_url, const char* read_token, int sleep_start_minute, int sleep_end_minute);
 };

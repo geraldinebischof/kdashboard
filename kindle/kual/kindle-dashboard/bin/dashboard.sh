@@ -6,6 +6,7 @@ CONFIG="${DASHBOARD_CONFIG:-/mnt/us/extensions/kindle-dashboard/config.sh}"
 DASHBOARD_DATA_URL="${DASHBOARD_DATA_URL:-}"
 DASHBOARD_EVENTS_URL="${DASHBOARD_EVENTS_URL:-}"
 DASHBOARD_TOGGLE_URL="${DASHBOARD_TOGGLE_URL:-}"
+DASHBOARD_DELETE_URL="${DASHBOARD_DELETE_URL:-}"
 DASHBOARD_READ_TOKEN="${DASHBOARD_READ_TOKEN:-}"
 DASHBOARD_TOGGLE_TOKEN="${DASHBOARD_TOGGLE_TOKEN:-}"
 CACHE="${CACHE:-/mnt/us/documents/kindle-dashboard-data.json}"
@@ -123,6 +124,7 @@ start_dashboard() {
     --url "$DASHBOARD_DATA_URL" \
     --events-url "$DASHBOARD_EVENTS_URL" \
     --toggle-url "$DASHBOARD_TOGGLE_URL" \
+    --delete-url "$DASHBOARD_DELETE_URL" \
     --read-token "$DASHBOARD_READ_TOKEN" \
     --toggle-token "$DASHBOARD_TOGGLE_TOKEN" \
     --cache "$CACHE" \
@@ -165,7 +167,7 @@ case "$1" in
     image_args=""
     [ "$INVERT_IMAGES" = "1" ] && image_args="--invert-images"
     once_save_pgm="${SAVE_PGM:-/mnt/us/documents/kindle-dashboard-last-render.pgm}"
-    "$RUN_APP" --url "$DASHBOARD_DATA_URL" --events-url "$DASHBOARD_EVENTS_URL" --toggle-url "$DASHBOARD_TOGGLE_URL" --read-token "$DASHBOARD_READ_TOKEN" --toggle-token "$DASHBOARD_TOGGLE_TOKEN" --cache "$CACHE" --sleep-window "$DASHBOARD_SLEEP_WINDOW" --once $image_args --save-pgm "$once_save_pgm" >> "$LOG" 2>&1
+    "$RUN_APP" --url "$DASHBOARD_DATA_URL" --events-url "$DASHBOARD_EVENTS_URL" --toggle-url "$DASHBOARD_TOGGLE_URL" --delete-url "$DASHBOARD_DELETE_URL" --read-token "$DASHBOARD_READ_TOKEN" --toggle-token "$DASHBOARD_TOGGLE_TOKEN" --cache "$CACHE" --sleep-window "$DASHBOARD_SLEEP_WINDOW" --once $image_args --save-pgm "$once_save_pgm" >> "$LOG" 2>&1
     allow_sleep
     ;;
   stop)

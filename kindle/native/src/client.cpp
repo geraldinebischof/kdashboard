@@ -189,6 +189,47 @@ int DashboardClient::postToggleItemAsync(const char* toggle_url, const char* tog
   return status == 0;
 }
 
+int DashboardClient::postDeleteItemAsync(const char* delete_url, const char* toggle_token, const char* item_id) {
+  if (!delete_url || !delete_url[0] || !toggle_token || !toggle_token[0] || !item_id || !item_id[0]) {
+    fprintf(stderr, "delete=post-skipped missing_config id=%s\n", item_id ? item_id : "");
+    return 0;
+  }
+
+  char escaped_id[120];
+  json::jsonEscapeString(item_id, escaped_id, sizeof(escaped_id));
+  char body[180];
+  snprintf(body, sizeof(body), "{\"id\":\"%s\"}", escaped_id);
+  // Reuse the toggle token as the shared write secret; the delete function
+  // accepts the same X-Dashboard-Toggle-Token header.
+  char header[200];
+  snprintf(header, sizeof(header), "X-Dashboard-Toggle-Token: %.150s", toggle_token);
+
+  char quoted_body[240];
+  char quoted_header[260];
+  char quoted_url[400];
+  char command[900];
+  shellQuote(body, quoted_body, sizeof(quoted_body));
+  shellQuote(header, quoted_header, sizeof(quoted_header));
+  shellQuote(delete_url, quoted_url, sizeof(quoted_url));
+  if (commandExists("curl")) {
+    snprintf(command, sizeof(command),
+             "curl -fsSL --connect-timeout 5 --max-time 12 -X POST -H 'Content-Type: application/json' -H %s -d %s %s >/dev/null 2>&1 &",
+             quoted_header, quoted_body, quoted_url);
+  } else if (commandExists("wget")) {
+    snprintf(command, sizeof(command),
+             "wget -q -T 12 --header='Content-Type: application/json' --header=%s --post-data=%s -O /dev/null %s >/dev/null 2>&1 &",
+             quoted_header, quoted_body, quoted_url);
+  } else {
+    fprintf(stderr, "delete=post-skipped missing_http_client id=%s\n", item_id);
+    return 0;
+  }
+
+  const int status = system(command);
+  if (status != 0) fprintf(stderr, "delete=post-start-failed status=%d id=%s\n", status, item_id);
+  else fprintf(stderr, "delete=post-background id=%s\n", item_id);
+  return status == 0;
+}
+
 void DashboardClient::startEventWatcher(const char* events_url, const char* read_token, int sleep_start_minute, int sleep_end_minute) {
   if (!events_url || !events_url[0]) {
     fprintf(stderr, "events=disabled empty_url\n");

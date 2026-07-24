@@ -40,6 +40,7 @@ class TouchRegionRegistry {
   TouchAction pending_action = kTouchNone;
   int pending_list_index = -1;
   int pending_recipe_index = -1;
+  int pending_item_index = -1;  // row index within the list (delete overlay needs it)
   char pending_item_id[48] = {};
   int pending_item_done = 0;
   int pending_touch_x = -1;

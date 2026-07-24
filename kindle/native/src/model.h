@@ -15,7 +15,10 @@ enum TouchAction {
   kTouchToggleItem = 4,
   kTouchOpenRecipe = 6,
   kTouchOpenRecipes = 7,
-  kTouchHome = 8
+  kTouchHome = 8,
+  kTouchDeleteItem = 9,      // X button on a list row -> open confirm overlay
+  kTouchConfirmDelete = 10,  // YES on the confirm overlay -> delete the item
+  kTouchCancelDelete = 11    // NO (or backdrop) on the confirm overlay -> dismiss
 };
 
 struct Item {
@@ -57,6 +60,7 @@ struct Options {
   char url[256];
   char events_url[256];
   char toggle_url[256];
+  char delete_url[256];
   char read_token[160];
   char toggle_token[160];
   char cache[256];

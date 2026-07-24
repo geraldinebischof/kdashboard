@@ -12,6 +12,7 @@
 struct ViewState {
   int list_index;
   int recipe_index;
+  int delete_item_index;  // -1 = no overlay; otherwise the row being delete-confirmed
 };
 
 // Cross-cutting rendering dependencies handed to every panel: where to register

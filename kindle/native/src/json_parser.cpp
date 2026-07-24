@@ -294,4 +294,52 @@ int patchCachedItemDone(const char* cache, const char* item_id, int done) {
   return ok;
 }
 
+int removeCachedItem(const char* cache, const char* item_id) {
+  char* payload = readFile(cache);
+  if (!payload) return 0;
+
+  const char* object_end = NULL;
+  const char* object_start = findItemObjectById(payload, item_id, &object_end);
+  if (!object_start || !object_end) {
+    free(payload);
+    return 0;
+  }
+
+  // Splice out [cut_start, cut_end): the object plus one adjacent comma so the
+  // surrounding "items" array stays valid JSON. Prefer a leading comma (the
+  // comma before this object) so the array's opening bracket stays clean; fall
+  // back to a trailing comma if this is the first element.
+  const char* cut_start = object_start;
+  const char* cut_end = object_end + 1;
+  const char* prev_comma = object_start;
+  while (prev_comma > payload && isspace(static_cast<unsigned char>(*(prev_comma - 1)))) prev_comma--;
+  if (prev_comma > payload && *(prev_comma - 1) == ',') {
+    cut_start = prev_comma - 1;
+  } else {
+    const char* next_comma = skipWhitespace(object_end + 1);
+    if (*next_comma == ',') cut_end = next_comma + 1;
+  }
+
+  const size_t prefix_len = static_cast<size_t>(cut_start - payload);
+  const size_t cut_len = static_cast<size_t>(cut_end - cut_start);
+  const size_t payload_len = strlen(payload);
+  const size_t suffix_len = payload_len - prefix_len - cut_len;
+  const size_t next_len = prefix_len + suffix_len;
+
+  char* next_payload = static_cast<char*>(malloc(next_len + 1));
+  if (!next_payload) {
+    free(payload);
+    return 0;
+  }
+  memcpy(next_payload, payload, prefix_len);
+  memcpy(next_payload + prefix_len, cut_end, suffix_len);
+  next_payload[next_len] = '\0';
+
+  const int ok = writeTextFileAtomic(cache, next_payload, next_len);
+  free(next_payload);
+  free(payload);
+  fprintf(stderr, "delete=optimistic-cache ok=%d id=%s\n", ok, item_id);
+  return ok;
+}
+
 }  // namespace json

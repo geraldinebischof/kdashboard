@@ -23,6 +23,11 @@ void freeDashboard(Dashboard* dashboard);
 // disk. Returns 1 if the file was rewritten.
 int patchCachedItemDone(const char* cache, const char* item_id, int done);
 
+// Optimistically remove an item object from the cached payload on disk. Returns
+// 1 if the file was rewritten. Splices out the object plus a single adjacent
+// comma so the surrounding "items" array stays valid JSON.
+int removeCachedItem(const char* cache, const char* item_id);
+
 // Escape a string for embedding inside a JSON body.
 void jsonEscapeString(const char* input, char* out, size_t out_size);
 

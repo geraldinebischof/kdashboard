@@ -19,7 +19,7 @@ const Panel* Navigator::activePanel(const Dashboard& dashboard) const {
 }
 
 void Navigator::render(Canvas& canvas, const Dashboard& dashboard, const char* status, RenderContext& ctx) const {
-  ViewState state{list_index_, recipe_index_};
+  ViewState state{list_index_, recipe_index_, delete_item_index_};
   activePanel(dashboard)->render(canvas, dashboard, status, state, ctx);
 }
 
@@ -44,6 +44,7 @@ void Navigator::goHome() {
   current_ = View::Home;
   list_index_ = -1;
   recipe_index_ = -1;
+  delete_item_index_ = -1;
 }
 
 void Navigator::goBack() {
@@ -58,6 +59,7 @@ void Navigator::goBack() {
     case View::List:
       current_ = View::Home;
       list_index_ = -1;
+      delete_item_index_ = -1;
       break;
     case View::Home:
     default:
@@ -68,6 +70,7 @@ void Navigator::goBack() {
 void Navigator::openList(int list_index) {
   current_ = View::List;
   list_index_ = list_index;
+  delete_item_index_ = -1;
 }
 
 void Navigator::openRecipe(int recipe_index) {

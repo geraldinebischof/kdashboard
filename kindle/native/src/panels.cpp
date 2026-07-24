@@ -7,14 +7,17 @@
 
 using namespace util;
 
-Rect exitButtonRectForScreen(int width, int) {
-  const int shell_w = width;
+// The EXIT (X) button sits at the far left of the home panel header, sized to
+// match the title row (scale 4). Width/height params are retained for the
+// shared signature used by the touch-input fallback, even though the button no
+// longer depends on screen dimensions.
+Rect exitButtonRectForScreen(int, int) {
   const int shell_x = 0;
   Rect rect;
-  rect.w = 172;
-  rect.h = 96;
-  rect.x = shell_x + shell_w - rect.w - 28;
-  rect.y = kKindleStatusBarHeight + 20;
+  rect.w = 52;
+  rect.h = 52;
+  rect.x = shell_x + 28;
+  rect.y = kKindleStatusBarHeight + 14;
   return rect;
 }
 
@@ -97,6 +100,74 @@ void drawCookbookTile(Canvas& canvas, int x, int y, int w, int h, RenderContext&
   }
 }
 
+// Geometry of the per-row X (delete) affordance. Kept in one spot so the row
+// layout and the hit-test region stay in lockstep.
+constexpr int kDeleteBtnSize = 48;
+constexpr int kDeleteBtnGap = 14;
+
+// Draw the small "X" delete button at the right edge of a row and register its
+// touch region. Region is added AFTER the row's toggle region so the X wins on
+// tap (registry resolves most-recently-added first).
+void drawDeleteButton(Canvas& canvas, int row_x, int row_y, int row_w, int row_h,
+                      int item_index, const char* item_id, RenderContext& ctx) {
+  const int btn_x = row_x + row_w - kDeleteBtnSize - kDeleteBtnGap;
+  const int btn_y = row_y + (row_h - kDeleteBtnSize) / 2;
+  canvas.strokeRoundedRect(btn_x, btn_y, kDeleteBtnSize, kDeleteBtnSize, 12, 2, 0);
+  canvas.drawTextCentered(btn_x + kDeleteBtnSize / 2, btn_y + (kDeleteBtnSize - 6 * 3) / 2 + 2,
+                          kDeleteBtnSize - 8, "X", 3, 0);
+  Rect btn_rect = {btn_x, btn_y, kDeleteBtnSize, kDeleteBtnSize};
+  ctx.touch.add(btn_rect, kTouchDeleteItem, -1, item_index, item_id, 0);
+}
+
+// Modal-style confirmation overlay shown when the user taps a row's X. Draws on
+// top of the list and registers NO / YES buttons (added last, so they take
+// priority over every row region beneath them).
+void drawDeleteConfirmOverlay(Canvas& canvas, int shell_w, int shell_y, int shell_h,
+                              const char* item_text, const char* item_id, RenderContext& ctx) {
+  const int overlay_w = 620;
+  const int overlay_h = 320;
+  const int overlay_x = (shell_w - overlay_w) / 2;
+  const int overlay_y = shell_y + (shell_h - overlay_h) / 2;
+
+  // Dim the screen behind the modal with a light grey wash before drawing the
+  // card. 224 is a mid-light grey readable on e-ink without fully hiding the
+  // list underneath.
+  canvas.fillRect(0, shell_y, shell_w, shell_h, 224);
+
+  canvas.fillRoundedRect(overlay_x, overlay_y, overlay_w, overlay_h, 24, 255);
+  canvas.doubleRoundedRect(overlay_x, overlay_y, overlay_w, overlay_h, 24, 0);
+
+  canvas.drawTextCentered(overlay_x + overlay_w / 2, overlay_y + 36, overlay_w - 48,
+                          "DELETE THIS ITEM?", 4, 0);
+  canvas.line(overlay_x + 40, overlay_y + 96, overlay_x + overlay_w - 40, overlay_y + 96, 2, 0);
+
+  char upper_text[96];
+  upperCopy(upper_text, sizeof(upper_text), item_text);
+  canvas.drawTextClipped(overlay_x + 40, overlay_y + 130, overlay_w - 80, upper_text, 3, 0);
+
+  const int btn_w = 220;
+  const int btn_h = 72;
+  const int btn_gap = 24;
+  const int btn_y = overlay_y + overlay_h - btn_h - 36;
+  const int btns_total = 2 * btn_w + btn_gap;
+  const int btn_left_x = overlay_x + (overlay_w - btns_total) / 2;
+  const int btn_right_x = btn_left_x + btn_w + btn_gap;
+
+  // NO (left) -> cancel
+  canvas.strokeRoundedRect(btn_left_x, btn_y, btn_w, btn_h, 16, 3, 0);
+  canvas.drawTextCentered(btn_left_x + btn_w / 2, btn_y + (btn_h - 6 * 3) / 2 + 4,
+                          btn_w - 16, "NO", 3, 0);
+  Rect no_rect = {btn_left_x, btn_y, btn_w, btn_h};
+  ctx.touch.add(no_rect, kTouchCancelDelete, -1, -1, item_id, 0);
+
+  // YES (right) -> confirm
+  canvas.fillRoundedRect(btn_right_x, btn_y, btn_w, btn_h, 16, 0);
+  canvas.drawTextCentered(btn_right_x + btn_w / 2, btn_y + (btn_h - 6 * 3) / 2 + 4,
+                          btn_w - 16, "YES", 3, 255);
+  Rect yes_rect = {btn_right_x, btn_y, btn_w, btn_h};
+  ctx.touch.add(yes_rect, kTouchConfirmDelete, -1, -1, item_id, 0);
+}
+
 }  // namespace
 
 void Panel::drawTopHeader(Canvas& canvas, const Dashboard& dashboard, const char* status, int shell_x, int shell_y, int shell_w, RenderContext& ctx) const {
@@ -104,20 +175,27 @@ void Panel::drawTopHeader(Canvas& canvas, const Dashboard& dashboard, const char
   canvas.doubleRoundedRect(shell_x + 10, shell_y + 10, shell_w - 20, header_h, 26, 0);
 
   Rect exit_rect = exitButtonRectForScreen(canvas.width, canvas.height);
-  const int right_bound = exit_rect.x - 16;
 
-  canvas.drawTextClipped(shell_x + 28, shell_y + 24, right_bound - shell_x - 44, "THE HORRORS PERSIST BUT SO DO WE", 4, 0);
-
+  // EXIT button: small box at the far left of the header, sized to the title
+  // row. The X glyph is drawn at title scale (4) so the button reads as the
+  // same weight as the title, not as a chunky control.
   Rect exit_hit_rect = {exit_rect.x - 20, kKindleStatusBarHeight, exit_rect.w + 40, exit_rect.y - kKindleStatusBarHeight + exit_rect.h + 20};
-  canvas.strokeRoundedRect(exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 18, 2, 0);
-  canvas.drawTextCentered(exit_rect.x + exit_rect.w / 2, exit_rect.y + 34, exit_rect.w - 16, "X", 3, 0);
+  canvas.strokeRoundedRect(exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 14, 2, 0);
+  canvas.drawTextCentered(exit_rect.x + exit_rect.w / 2, exit_rect.y + 10, exit_rect.w - 16, "X", 4, 0);
   ctx.touch.add(exit_hit_rect, kTouchExit, -1, -1, "", 0);
   ctx.touch.add(exit_rect, kTouchExit, -1, -1, "", 0);
 
-  canvas.line(shell_x + 20, shell_y + 88, right_bound - 8, shell_y + 88, 2, 0);
+  // Title sits to the right of the EXIT button, vertically aligned with it.
+  // The divider and updated line are below the button, so they span the full
+  // header width as before.
+  const int title_x = exit_rect.x + exit_rect.w + 16;
+  const int title_w = shell_x + shell_w - title_x - 28;
+  canvas.drawTextClipped(title_x, exit_rect.y + 10, title_w, "THE HORRORS PERSIST BUT SO DO WE", 4, 0);
+
+  canvas.line(shell_x + 20, shell_y + 88, shell_x + shell_w - 28, shell_y + 88, 2, 0);
   char updated[96];
   formatDisplayDate(dashboard.generated_at, status, updated, sizeof(updated));
-  canvas.drawTextClipped(shell_x + 28, shell_y + 102, right_bound - shell_x - 44, updated, 2, 0);
+  canvas.drawTextClipped(shell_x + 28, shell_y + 102, shell_w - 56, updated, 2, 0);
 }
 
 void Panel::drawSubHeader(Canvas& canvas, int shell_x, int y, int shell_w, const char* title, RenderContext& ctx) const {
@@ -128,8 +206,15 @@ void Panel::drawSubHeader(Canvas& canvas, int shell_x, int y, int shell_w, const
   const int title_y = y + (title_scale == 5 ? 22 : (title_scale == 4 ? 26 : 30));
   canvas.drawTextClipped(shell_x + 28, title_y, title_w, title, title_scale, 0);
 
-  Rect back_rect = {shell_x + shell_w - 136, y + 14, 104, 52};
-  Rect home_rect = {back_rect.x - 116, y + 14, 104, 52};
+  // Center HOME and BACK buttons in the title bar with a gap between them.
+  const int btn_w = 104;
+  const int btn_h = 52;
+  const int btn_gap = 32;
+  const int btns_total = 2 * btn_w + btn_gap;
+  const int btn_y = y + 14;
+  const int back_cx = shell_x + shell_w / 2 + btns_total / 2;
+  const Rect back_rect = {back_cx - btn_w, btn_y, btn_w, btn_h};
+  const Rect home_rect = {back_cx - btn_w - btn_gap - btn_w, btn_y, btn_w, btn_h};
   canvas.strokeRoundedRect(home_rect.x, home_rect.y, home_rect.w, home_rect.h, 14, 2, 0);
   canvas.drawTextCentered(home_rect.x + home_rect.w / 2, home_rect.y + 16, home_rect.w - 12, "HOME", 2, 0);
   ctx.touch.add(home_rect, kTouchHome, -1, -1, "", 0);
@@ -210,6 +295,7 @@ void ListPanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
   const int max_rows = (shell_y + shell_h - first_y - 24) / (row_h + row_gap);
   const int shown = list->item_count < max_rows ? list->item_count : max_rows;
   const int box_size = 30;
+  const int delete_reserve = kDeleteBtnSize + kDeleteBtnGap * 2;  // room for X + breathing space
   for (int i = 0; i < shown; i++) {
     const int row_y = first_y + i * (row_h + row_gap);
     Rect row_rect = {row_x, row_y, row_w, row_h};
@@ -218,7 +304,14 @@ void ListPanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
     canvas.drawCheckbox(row_x + 18, row_y + (row_h - box_size) / 2, box_size, list->items[i].done);
     char item_text[96];
     upperCopy(item_text, sizeof(item_text), list->items[i].text);
-    canvas.drawTextClipped(row_x + 18 + box_size + 14, row_y + 20, row_w - 36 - box_size - 14, item_text, 3, 0);
+    canvas.drawTextClipped(row_x + 18 + box_size + 14, row_y + 20,
+                           row_w - 36 - box_size - 14 - delete_reserve, item_text, 3, 0);
+    drawDeleteButton(canvas, row_x, row_y, row_w, row_h, i, list->items[i].id, ctx);
+  }
+
+  if (state.delete_item_index >= 0 && state.delete_item_index < list->item_count) {
+    const Item& target = list->items[state.delete_item_index];
+    drawDeleteConfirmOverlay(canvas, shell_w, shell_y, shell_h, target.text, target.id, ctx);
   }
 }
 
