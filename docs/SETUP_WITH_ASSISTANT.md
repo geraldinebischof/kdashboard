@@ -98,8 +98,8 @@ formats in `docs/INSTALL_FOR_USERS.md`:
 
 ```text
 Show me the supported Telegram message examples from docs/INSTALL_FOR_USERS.md
-and help me test one planner command, one challenge check-in, and one meal-plan
-command without exposing tokens.
+and help me test one planner command and one recipe command without exposing
+tokens.
 ```
 
 ## Assistant Prompt: Kindle Config
@@ -152,19 +152,6 @@ If an ARM Kindle compiler is installed:
 ```text
 Build the Kindle KUAL package with make -C kindle/native extension. If the
 cross compiler is missing, ask me for KINDLE_CXX or suggest the Zig build path.
-```
-
-## Assistant Prompt: Health Sync Companion
-
-Use this if you want Apple Health summaries synced from iPhone:
-
-```text
-Help me set up the optional iOS Health Sync companion. Follow
-docs/INSTALL_FOR_USERS.md. Confirm the health migration/function/secret are
-present without printing secret values, create
-ios/HealthSyncCompanion/Config/LocalConfig.xcconfig from the example if needed,
-and help me set INSFORGE_HEALTH_SYNC_URL plus HEALTH_SYNC_TOKEN locally. Do not
-commit LocalConfig.xcconfig.
 ```
 
 ## Assistant Prompt: Verify

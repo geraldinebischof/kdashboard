@@ -39,7 +39,7 @@ npm run kit:backend
 ```
 
 The bootstrap script applies the public schema migrations, creates generated
-`TELEGRAM_WEBHOOK_SECRET`, `HEALTH_SYNC_TOKEN`, `DASHBOARD_READ_TOKEN`, and
+`TELEGRAM_WEBHOOK_SECRET`, `DASHBOARD_READ_TOKEN`, and
 `DASHBOARD_TOGGLE_TOKEN` values if missing, and deploys the dashboard functions.
 
 It skips optional sample recipe/photo migrations by default. To include the
@@ -89,40 +89,90 @@ npm run telegram:configure -- \
 Try a Telegram command:
 
 ```text
-add milk and eggs to groceries
-add clean desk to todo
-mark milk done
+/addgrocery            (then type: milk and eggs)
+/addtodo               (then type: clean desk)
+/grocery               (shows the grocery list)
+/newrecipe Pancakes
 ```
+
+The `/` autocomplete menu (registered by `telegram:configure`) lists the
+available commands — tap one and the bot prompts you for the rest. The catalog
+also appears in chat after every successful action, so you always have it one
+glance away.
 
 ## Supported Telegram Messages
 
-The webhook supports these message types. If `OPENAI_API_KEY` is configured, it
-can understand more natural phrasing; if not, the built-in parser supports the
-patterns below.
+The bot has two interfaces: **slash commands** (primary) and **free text**
+(fallback). If `OPENAI_API_KEY` is configured, the free-text fallback
+understands more natural phrasing; if not, the built-in heuristic parser
+handles the patterns below.
+
+### Slash Commands
+
+Tap a command in Telegram's `/` menu, then type the item when prompted:
+
+```text
+/addgrocery             add to grocery (tap, then type item)
+/addtodo                add to to-do
+/addchores              add to daily chores
+/grocery                show the grocery list
+/todo                   show the to-do list
+/chores                 show daily chores
+/newrecipe [title]      record a recipe step by step
+/recipe <title>         show a recipe
+/editrecipe <title>     edit a recipe step by step
+/deleterecipe <title>   delete a recipe
+/cancel                 cancel a pending add or recipe
+/help                   show the command catalog
+```
+
+You can also include the item in the same message (`/addgrocery milk, eggs`),
+but the tap-then-type pattern is the quick way — you never have to type the
+command name.
+
+Example session:
+
+```text
+You: /addgrocery
+Bot: What should I add to grocery? (comma-separate multiples, or type "cancel")
+You: milk, eggs, flour
+Bot: Added milk, eggs, flour to grocery.
+```
+
+### Free-Text Fallback
+
+Anything that isn't a slash command is parsed as natural language. Use this for
+done/delete/clear actions (no slash command for those).
 
 ### Planner Lists
 
 Supported lists:
 
 - Grocery: `grocery`, `groceries`, `shopping`, `market`
-- Workout: `workout`, `exercise`, `training`, `gym`
-- Meal notes: `meal`, `meals`, `menu`, `food`
 - To-do: `todo`, `to-do`, `task`, `tasks`, `errand`, `errands`
+- Daily chores: `daily chore`, `daily chores`, `chores`, `chore`, `daily routine`, `routine`
 
 Add items:
 
 ```text
 add milk and eggs to groceries
 need apples, yogurt, oats in grocery
-put leg day on workout
 add clean desk to todo
+put laundry on daily chores
+```
+
+View a list (also available as `/grocery`, `/todo`, `/chores`):
+
+```text
+show me the grocery list
+what's on my todo?
+read my chores
 ```
 
 Mark items done:
 
 ```text
 mark milk done
-complete leg day in workout
 check off clean desk from todo
 ```
 
@@ -130,7 +180,6 @@ Mark items open again:
 
 ```text
 undo milk
-uncheck leg day in workout
 mark clean desk not done
 ```
 
@@ -138,7 +187,6 @@ Remove items:
 
 ```text
 remove eggs from groceries
-delete leg day from workout
 drop clean desk from todo
 ```
 
@@ -147,84 +195,75 @@ Clear a list:
 ```text
 clear todo
 empty groceries
-reset workout
 ```
 
 If a done/open/remove command does not name a list, the webhook searches across
 lists for matching item text.
 
-### Health Targets
-
-Set dashboard targets for steps or calories:
-
-```text
-set steps target to 12000
-update calorie goal to 2100
-change calories target = 1900
-```
-
-### 75 Day Challenge Check-Ins
-
-Log water:
-
-```text
-drank 1L water
-water 750ml
-XL water
-```
-
-Log sleep:
-
-```text
-slept 7.5 hours
-sleep 8h
-```
-
-Log a workout:
-
-```text
-workout done
-completed gym
-did exercise
-```
-
-### Today's Meal Plan
-
-Meal plan commands match saved recipe titles by partial title. Use these after
-you have recipes saved in the backend.
-
-Set or replace today's meal plan:
-
-```text
-set meal plan to Sample Breakfast Bowl and Sample Toast
-plan meals Sample Breakfast Bowl, Sample Smoothie
-meals today: Sample Toast + Sample Smoothie
-```
-
-Add another saved recipe to today's meal plan:
-
-```text
-add meal Sample Smoothie
-include Sample Toast in meals
-put Sample Breakfast Bowl on meal plan
-```
-
-Clear today's meal plan:
-
-```text
-clear meal plan
-reset meals today
-remove meals
-```
-
 ### Saved Recipes
 
-Create or update a saved recipe. Ingredients and instructions are optional.
+Create or update a saved recipe in one message. Ingredients and instructions
+are optional.
 
 ```text
 add recipe Sample Wrap ingredients tortilla 1 piece, beans 100 g instructions roll and toast
 save meal Sample Smoothie ingredients milk 200 ml, fruit 0.5 cup
 create recipe Sample Bowl ingredients yogurt 200 g, oats 20 g
+```
+
+For longer recipes, use the chat-form flow to record a recipe step by step.
+Send `/newrecipe [title]` (or bare `/newrecipe` to be prompted), then answer
+the bot's prompts:
+
+```text
+/newrecipe Pancakes
+2 eggs
+200ml milk
+150g flour
+done
+Mix dry into wet, rest 10 min, fry in a hot pan.
+```
+
+Each ingredient is its own message. Type `done` to finish ingredients, send the
+steps as one final message, and the recipe is saved. Type `cancel` at any step
+to drop the draft.
+
+### Recipe Editing & Deletion
+
+View a recipe to see its current ingredients and steps:
+
+```text
+/recipe Pancakes
+show recipe Pancakes
+what's in the pancake recipe?
+```
+
+Edit a whole recipe step by step. `/editrecipe` loads the existing recipe and
+walks you through ingredients then steps; type `keep` (or `done`) to preserve a
+field as-is, or send a new value to replace it. New ingredients are added to
+the current ones:
+
+```text
+/editrecipe Pancakes
+keep                       (keep the current ingredients)
+100g butter                (add one more)
+done
+keep                       (keep the existing steps)
+```
+
+For quick tweaks, edit a recipe in one message without touching the rest:
+
+```text
+add 100g butter to Pancakes        (append an ingredient)
+remove eggs from Pancakes          (remove an ingredient by name)
+set Pancakes steps to: mix and fry (replace just the steps)
+```
+
+Delete a recipe entirely (its ingredients are removed with it):
+
+```text
+/deleterecipe Pancakes
+delete recipe Pancakes
 ```
 
 ## 4. Configure the Kindle Package
@@ -324,36 +363,6 @@ The native app uses an always-on profile: hourly auto-refresh, manual KUAL
 refresh on demand, and no overnight quiet mode by default. For optional
 auto-open notes, see `kindle/README.md`.
 
-## 6. Optional Health Sync Companion
-
-The native iOS companion app lives in:
-
-```text
-ios/HealthSyncCompanion
-```
-
-It reads Apple Health daily steps and nutrition totals, then sends daily
-aggregate rows to the `health-sync` InsForge function.
-
-Before running the iOS app, make sure the health pieces are deployed:
-
-```sh
-npx @insforge/cli db migrations up 20260627000000_create-health-daily-summaries.sql
-npx @insforge/cli secrets add HEALTH_SYNC_TOKEN <long-random-health-sync-token>
-npx @insforge/cli functions deploy health-sync --file functions/health-sync.ts --name "Health Sync"
-```
-
-Then configure the local iOS secret:
-
-```sh
-cd ios/HealthSyncCompanion
-cp Config/LocalConfig.example.xcconfig Config/LocalConfig.xcconfig
-```
-
-Edit `Config/LocalConfig.xcconfig` so `HEALTH_SYNC_TOKEN` matches the InsForge
-secret. Open `HealthSyncCompanion.xcodeproj` in Xcode and run it on a real
-iPhone; HealthKit data is not meaningfully testable in the simulator.
-
 ## Updating Later
 
 When you pull a new version:
@@ -368,8 +377,7 @@ Then replace the installed KUAL extension files, keeping your local `config.sh`.
 
 ## Privacy Notes
 
-- Do not share `INSFORGE_API_KEY`, Telegram bot token, webhook secret, or health
-  sync token.
+- Do not share `INSFORGE_API_KEY`, Telegram bot token, or webhook secret.
 - Treat `DASHBOARD_READ_TOKEN` and `DASHBOARD_TOGGLE_TOKEN` as device secrets.
   The read token exposes dashboard data, while the toggle token can change
   checklist state.

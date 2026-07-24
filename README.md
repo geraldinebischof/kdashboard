@@ -12,7 +12,6 @@ Monochrome, Kindle-friendly planner dashboard with Telegram bot updates.
   it, the webhook uses the built-in command parser.
 - Optional: Zig or a Kindle-compatible ARM cross compiler to rebuild the KUAL
   package.
-- Optional: Xcode and a real iPhone for the Health Sync companion app.
 
 ## Setup Instructions
 
@@ -28,8 +27,7 @@ If you are using a coding assistant for setup, use
 ## Project Structure
 
 - `functions/`: InsForge edge functions for dashboard JSON, live events,
-  item toggles, Telegram parsing/actions, version checks, and Health Sync
-  uploads.
+  item toggles, and Telegram parsing/actions.
 - `migrations/`: Postgres schema and optional sample-data migrations used by
   the bring-your-own-backend setup.
 - `kindle/native/`: Native C++ e-ink dashboard renderer, local render check,
@@ -38,8 +36,6 @@ If you are using a coding assistant for setup, use
   placeholder assets, and `config.sh.example`.
 - `kindle/launch-dashboard.sh`: Kindle-side launcher used by installed
   shortcuts and native install helpers.
-- `ios/HealthSyncCompanion/`: Optional iOS app that reads Apple Health daily
-  aggregates and posts them to the `health-sync` function.
 - `scripts/`: Setup and maintenance helpers for InsForge bootstrapping,
   Telegram webhook configuration, Kindle native install, and Kindle proof
   checks.
@@ -53,13 +49,12 @@ If you are using a coding assistant for setup, use
 
 **Backend:** InsForge
 
-**Inputs:** Telegram bot + iOS HealthKit
+**Inputs:** Telegram bot
 
 Code entry points:
 
 - Native app: [`kindle/native/src/kindle_dashboard.cpp`](kindle/native/src/kindle_dashboard.cpp)
 - Backend functions: [`functions/`](functions/)
-- Health companion: [`ios/HealthSyncCompanion/`](ios/HealthSyncCompanion/)
 - Owner config template:
   [`kindle/kual/kindle-dashboard/config.sh.example`](kindle/kual/kindle-dashboard/config.sh.example)
 
@@ -67,20 +62,16 @@ Code entry points:
 
 InsForge handles the cloud layer:
 
-**Postgres Database:** to-dos, groceries, recipes, meal plans, health summaries,
-challenge logs
+**Postgres Database:** to-dos, groceries, daily chores, recipes
 
-**Edge functions:** read dashboard data, sync HealthKit, parse Telegram updates,
+**Edge functions:** read dashboard data, parse Telegram updates,
 toggle Kindle tasks, SSE live events
 
 Relevant files:
 
 - Schema:
   [`migrations/001_planner_lists.sql`](migrations/001_planner_lists.sql),
-  [`migrations/20260627000000_create-health-daily-summaries.sql`](migrations/20260627000000_create-health-daily-summaries.sql),
-  [`migrations/20260629052000_create-recipes.sql`](migrations/20260629052000_create-recipes.sql),
-  [`migrations/20260629083000_create-challenge-daily-logs.sql`](migrations/20260629083000_create-challenge-daily-logs.sql),
-  [`migrations/20260629162000_create-meal-plan-entries.sql`](migrations/20260629162000_create-meal-plan-entries.sql)
+  [`migrations/20260629052000_create-recipes.sql`](migrations/20260629052000_create-recipes.sql)
 - Dashboard read endpoint:
   [`functions/kindle-dashboard-data.ts`](functions/kindle-dashboard-data.ts)
 - Toggle endpoint:
@@ -89,8 +80,6 @@ Relevant files:
   [`functions/kindle-dashboard-events.ts`](functions/kindle-dashboard-events.ts)
 - Telegram webhook:
   [`functions/telegram-webhook.ts`](functions/telegram-webhook.ts)
-- Health sync endpoint:
-  [`functions/health-sync.ts`](functions/health-sync.ts)
 
 The dashboard read endpoint builds a compact payload and hashes the visible
 state into a version:
@@ -99,10 +88,7 @@ state into a version:
 const payload = {
   ...payloadWithoutVersion,
   version: hashText(JSON.stringify({
-    health: payloadWithoutVersion.health,
-    challenge: payloadWithoutVersion.challenge,
     lists: payloadWithoutVersion.lists,
-    meal_plan: payloadWithoutVersion.meal_plan,
     recipes: payloadWithoutVersion.recipes
   }))
 };
@@ -195,48 +181,9 @@ List names also have hardcoded aliases:
 ```ts
 const LIST_ALIASES = {
   grocery: ["grocery", "groceries", "shopping", "market"],
-  workout: ["workout", "exercise", "training", "gym"],
-  meal: ["meal", "meals", "menu", "food"],
-  todo: ["todo", "to-do", "task", "tasks", "errand", "errands"]
+  todo: ["todo", "to-do", "task", "tasks", "errand", "errands"],
+  daily_chores: ["daily chore", "daily chores", "chores", "chore", "daily routine", "routine"]
 };
-```
-
-### iOS Companion App
-
-The iOS app reads data from Apple Health:
-steps, calories, protein, carbs, and fat.
-
-It sends summarized day-level rows to an InsForge endpoint.
-
-That endpoint runs an edge function which saves the daily summary to the
-database.
-
-Relevant files:
-
-- HealthKit reads:
-  [`ios/HealthSyncCompanion/HealthSyncCompanion/HealthKitSyncService.swift`](ios/HealthSyncCompanion/HealthSyncCompanion/HealthKitSyncService.swift)
-- Upload client:
-  [`ios/HealthSyncCompanion/HealthSyncCompanion/HealthSyncClient.swift`](ios/HealthSyncCompanion/HealthSyncCompanion/HealthSyncClient.swift)
-- Backend endpoint:
-  [`functions/health-sync.ts`](functions/health-sync.ts)
-
-The iOS app collects cumulative daily sums:
-
-```swift
-async let steps = dailySums(identifier: .stepCount, unit: .count(), startDate: startDate, endDate: endDate)
-async let energy = dailySums(identifier: .dietaryEnergyConsumed, unit: .kilocalorie(), startDate: startDate, endDate: endDate)
-async let protein = dailySums(identifier: .dietaryProtein, unit: .gram(), startDate: startDate, endDate: endDate)
-async let carbs = dailySums(identifier: .dietaryCarbohydrates, unit: .gram(), startDate: startDate, endDate: endDate)
-async let fat = dailySums(identifier: .dietaryFatTotal, unit: .gram(), startDate: startDate, endDate: endDate)
-```
-
-Then it posts JSON with the sync token:
-
-```swift
-request.httpMethod = "POST"
-request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-request.setValue(try AppConfig.healthSyncToken, forHTTPHeaderField: "x-health-sync-token")
-request.httpBody = try JSONEncoder().encode(payload)
 ```
 
 ### Kindle Dashboard Update
@@ -260,19 +207,6 @@ Example response:
 {
   "ok": true,
   "generated_at": "2026-07-09T12:00:00.000Z",
-  "health": {
-    "steps": 8420,
-    "calories": 1830,
-    "protein_g": 92,
-    "steps_target": 10000,
-    "calories_target": 2200
-  },
-  "challenge": {
-    "day": 12,
-    "water_l": 2.5,
-    "sleep_hours": 7.5,
-    "workouts": 1
-  },
   "lists": [
     {
       "key": "grocery",
@@ -282,7 +216,6 @@ Example response:
       ]
     }
   ],
-  "meal_plan": [],
   "recipes": [],
   "version": "a13f9c"
 }
@@ -313,9 +246,6 @@ The renderer parses JSON into a fixed dashboard struct:
 
 ```cpp
 extractString(json, NULL, "version", dashboard->version, sizeof(dashboard->version), "");
-dashboard->steps = extractInt(json, NULL, "steps", 0);
-dashboard->calories = extractInt(json, NULL, "calories", 0);
-dashboard->protein_g = extractInt(json, NULL, "protein_g", 0);
 ```
 
 Then it draws into a canvas and writes to `/dev/fb0` when available:
