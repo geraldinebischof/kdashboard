@@ -34,6 +34,49 @@ const char* findKeyInRange(const char* start, const char* end, const char* key) 
   return NULL;
 }
 
+// Append Unicode codepoint `cp` to `out` as UTF-8, size-bounded by `out_size`.
+// `length` is the current byte length of `out`. Returns the new byte length.
+size_t appendUtf8(char* out, size_t out_size, size_t length, unsigned int cp) {
+  if (cp < 0x80) {
+    if (length + 1 < out_size) out[length++] = static_cast<char>(cp);
+  } else if (cp < 0x800) {
+    if (length + 2 < out_size) {
+      out[length++] = static_cast<char>(0xC0 | (cp >> 6));
+      out[length++] = static_cast<char>(0x80 | (cp & 0x3F));
+    }
+  } else if (cp < 0x10000) {
+    if (length + 3 < out_size) {
+      out[length++] = static_cast<char>(0xE0 | (cp >> 12));
+      out[length++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      out[length++] = static_cast<char>(0x80 | (cp & 0x3F));
+    }
+  } else {
+    if (length + 4 < out_size) {
+      out[length++] = static_cast<char>(0xF0 | (cp >> 18));
+      out[length++] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+      out[length++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      out[length++] = static_cast<char>(0x80 | (cp & 0x3F));
+    }
+  }
+  return length;
+}
+
+// Read 4 hex digits from `cursor` into `value`. Returns 1 on success.
+int readHex4(const char* cursor, unsigned int* value) {
+  unsigned int v = 0;
+  for (int i = 0; i < 4; i++) {
+    char d = cursor[i];
+    unsigned int nibble;
+    if (d >= '0' && d <= '9') nibble = d - '0';
+    else if (d >= 'a' && d <= 'f') nibble = d - 'a' + 10;
+    else if (d >= 'A' && d <= 'F') nibble = d - 'A' + 10;
+    else return 0;
+    v = (v << 4) | nibble;
+  }
+  *value = v;
+  return 1;
+}
+
 int parseJsonString(const char* cursor, char* out, size_t out_size, const char** after) {
   cursor = skipWhitespace(cursor);
   if (!cursor || *cursor != '"') return 0;
@@ -47,8 +90,22 @@ int parseJsonString(const char* cursor, char* out, size_t out_size, const char**
       else if (ch == 'r') ch = ' ';
       else if (ch == 't') ch = ' ';
       else if (ch == 'u') {
-        ch = '?';
-        for (int i = 0; i < 4 && *cursor; i++) cursor++;
+        unsigned int cp = 0;
+        if (readHex4(cursor, &cp)) {
+          cursor += 4;
+          // UTF-16 surrogate pair: \uD8XX..\uDBXX followed by \uDCXX..\uDFFF.
+          if (cp >= 0xD800 && cp <= 0xDBFF && cursor[0] == '\\' && cursor[1] == 'u') {
+            unsigned int low = 0;
+            if (readHex4(cursor + 2, &low)) {
+              cursor += 6;
+              cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+            }
+          }
+          length = appendUtf8(out, out_size, length, cp);
+        } else {
+          length = appendUtf8(out, out_size, length, 0xFFFD);
+        }
+        continue;  // codepoint already appended; skip the single-byte append below
       }
     }
     if (length + 1 < out_size) out[length++] = ch;

@@ -45,7 +45,29 @@ int insideRoundedRect(int xx, int yy, int w, int h, int r) {
   return dx * dx + dy * dy <= r * r;
 }
 
-unsigned char glyphRow(char ch, int row) {
+// Decode a single UTF-8 codepoint starting at `text[i]`, returning the
+// codepoint via `cp` and the number of bytes consumed via `advance`. Invalid or
+// truncated sequences collapse to U+FFFD (advance = 1) so a stray 0x80 byte
+// can't desync the cursor through the rest of the string.
+void decodeUtf8(const char* text, size_t i, size_t length, unsigned int* cp, size_t* advance) {
+  unsigned char b0 = static_cast<unsigned char>(text[i]);
+  if (b0 < 0x80) { *cp = b0; *advance = 1; return; }
+  unsigned int code = 0;
+  size_t need = 0;
+  if ((b0 & 0xE0) == 0xC0) { code = b0 & 0x1F; need = 1; }
+  else if ((b0 & 0xF0) == 0xE0) { code = b0 & 0x0F; need = 2; }
+  else if ((b0 & 0xF8) == 0xF0) { code = b0 & 0x07; need = 3; }
+  if (need == 0 || i + need >= length) { *cp = 0xFFFD; *advance = 1; return; }
+  for (size_t k = 1; k <= need; k++) {
+    const unsigned char b = static_cast<unsigned char>(text[i + k]);
+    if ((b & 0xC0) != 0x80) { *cp = 0xFFFD; *advance = 1; return; }
+    code = (code << 6) | (b & 0x3F);
+  }
+  *cp = code;
+  *advance = need + 1;
+}
+
+unsigned char glyphRow(unsigned int cp, int row) {
   static const unsigned char digits[10][7] = {
     {14, 17, 19, 21, 25, 17, 14}, {4, 12, 4, 4, 4, 4, 14}, {14, 17, 1, 2, 4, 8, 31}, {30, 1, 1, 14, 1, 1, 30}, {2, 6, 10, 18, 31, 2, 2},
     {31, 16, 30, 1, 1, 17, 14}, {6, 8, 16, 30, 17, 17, 14}, {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}, {14, 17, 17, 15, 1, 2, 12}
@@ -57,10 +79,21 @@ unsigned char glyphRow(char ch, int row) {
     {15,16,16,14,1,1,30},{31,4,4,4,4,4,4},{17,17,17,17,17,17,14},{17,17,17,17,17,10,4},{17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
     {17,17,10,4,4,4,4},{31,1,2,4,8,16,31}
   };
-  if (ch >= '0' && ch <= '9') return digits[ch - '0'][row];
-  if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
-  if (ch >= 'A' && ch <= 'Z') return letters[ch - 'A'][row];
-  switch (ch) {
+  if (cp >= '0' && cp <= '9') return digits[cp - '0'][row];
+  if (cp >= 'a' && cp <= 'z') cp = cp - 'a' + 'A';
+  if (cp >= 'A' && cp <= 'Z') return letters[cp - 'A'][row];
+  // Latin-1 umlauts / ess-zed. Lower-case forms share a glyph with upper-case.
+  switch (cp) {
+    case 0xC4: case 0xE4: { static const unsigned char g[7] = {6,0,17,17,31,17,17}; return g[row]; }   // Ä ä
+    case 0xC5: case 0xE5: { static const unsigned char g[7] = {4,0,14,17,31,17,17}; return g[row]; }   // Å å
+    case 0xC6: case 0xE6: { static const unsigned char g[7] = {0,0,14,17,31,17,14}; return g[row]; }   // Æ æ
+    case 0xC7: case 0xE7: { static const unsigned char g[7] = {0,0,14,17,16,17,30}; return g[row]; }   // Ç ç
+    case 0xD6: case 0xF6: { static const unsigned char g[7] = {6,0,14,17,17,17,14}; return g[row]; }   // Ö ö
+    case 0xDC: case 0xFC: { static const unsigned char g[7] = {6,0,17,17,17,17,14}; return g[row]; }   // Ü ü
+    case 0xDF:            { static const unsigned char g[7] = {12,18,16,14,17,18,12}; return g[row]; } // ß
+    default: break;
+  }
+  switch (cp) {
     case ' ': return 0;
     case '/': { static const unsigned char g[7] = {1,1,2,4,8,16,16}; return g[row]; }
     case ':': { static const unsigned char g[7] = {0,4,4,0,4,4,0}; return g[row]; }
@@ -96,8 +129,41 @@ void recipePhotoPath(const char* base_dir, const char* recipe_id, char* out, siz
 
 }  // namespace
 
+// Count UTF-8 codepoints (not bytes) so an umlaut occupies one cell, not two.
+int utf8CodepointCount(const char* text) {
+  if (!text) return 0;
+  int count = 0;
+  for (size_t i = 0, length = strlen(text); i < length;) {
+    unsigned int cp;
+    size_t advance;
+    decodeUtf8(text, i, length, &cp, &advance);
+    i += advance;
+    count++;
+  }
+  return count;
+}
+
+// Copy at most `max_glyphs` codepoints of `text` into `out` (always NUL-terminated,
+// size-bounded by `out_size`). Stops at the first invalid byte boundary.
+void utf8CopyGlyphs(char* out, size_t out_size, const char* text, int max_glyphs) {
+  if (!out || out_size == 0) return;
+  size_t written = 0;
+  if (text) {
+    for (size_t i = 0, length = strlen(text); i < length && max_glyphs > 0;) {
+      unsigned int cp;
+      size_t advance;
+      decodeUtf8(text, i, length, &cp, &advance);
+      if (i + advance > length) break;
+      for (size_t k = 0; k < advance && written + 1 < out_size; k++) out[written++] = text[i + k];
+      i += advance;
+      max_glyphs--;
+    }
+  }
+  out[written] = '\0';
+}
+
 int textWidth(const char* text, int scale) {
-  return static_cast<int>(strlen(text ? text : "")) * 6 * scale;
+  return utf8CodepointCount(text) * 6 * scale;
 }
 
 void Canvas::clear(unsigned char color) {
@@ -203,25 +269,28 @@ void Canvas::circleRing(int cx, int cy, int radius, int thickness, int percent, 
 }
 
 void Canvas::drawText(int x, int y, const char* text, int scale, unsigned char color) {
+  if (!text) return;
   int cursor = x;
-  for (size_t i = 0; text && text[i]; i++) {
-    char ch = text[i];
-    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+  const size_t length = strlen(text);
+  for (size_t i = 0; i < length;) {
+    unsigned int cp;
+    size_t advance;
+    decodeUtf8(text, i, length, &cp, &advance);
     for (int row = 0; row < 7; row++) {
-      const unsigned char bits = glyphRow(ch, row);
+      const unsigned char bits = glyphRow(cp, row);
       for (int col = 0; col < 5; col++) {
         if (bits & (1 << (4 - col))) fillRect(cursor + col * scale, y + row * scale, scale, scale, color);
       }
     }
     cursor += 6 * scale;
+    i += advance;
   }
 }
 
 void Canvas::drawTextClipped(int x, int y, int max_width, const char* text, int scale, unsigned char color) {
-  char clipped[128];
-  util::copyText(clipped, sizeof(clipped), text);
   const int max_chars = max_width / (6 * scale);
-  if (max_chars > 0 && static_cast<int>(strlen(clipped)) > max_chars) clipped[max_chars] = '\0';
+  char clipped[128];
+  utf8CopyGlyphs(clipped, sizeof(clipped), text, max_chars > 0 ? max_chars : 0);
   drawText(x, y, clipped, scale, color);
 }
 
@@ -243,8 +312,8 @@ int Canvas::drawTextWrapped(int x, int y, int max_width, const char* text, int s
     const char saved = *cursor;
     *cursor = '\0';
 
-    const int line_len = static_cast<int>(strlen(line_text));
-    const int word_len = static_cast<int>(strlen(word));
+    const int line_len = utf8CodepointCount(line_text);
+    const int word_len = utf8CodepointCount(word);
     if (line_len > 0 && line_len + 1 + word_len > max_chars) {
       drawText(x, y + lines * (8 * scale + 6), line_text, scale, color);
       lines++;
@@ -253,8 +322,7 @@ int Canvas::drawTextWrapped(int x, int y, int max_width, const char* text, int s
     if (lines >= max_lines) break;
     if (word_len > max_chars) {
       char clipped[128];
-      util::copyText(clipped, sizeof(clipped), word);
-      clipped[max_chars] = '\0';
+      utf8CopyGlyphs(clipped, sizeof(clipped), word, max_chars);
       drawText(x, y + lines * (8 * scale + 6), clipped, scale, color);
       lines++;
     } else {
@@ -272,10 +340,9 @@ int Canvas::drawTextWrapped(int x, int y, int max_width, const char* text, int s
 }
 
 void Canvas::drawTextCentered(int cx, int y, int max_width, const char* text, int scale, unsigned char color) {
-  char clipped[128];
-  util::copyText(clipped, sizeof(clipped), text);
   const int max_chars = max_width / (6 * scale);
-  if (max_chars > 0 && static_cast<int>(strlen(clipped)) > max_chars) clipped[max_chars] = '\0';
+  char clipped[128];
+  utf8CopyGlyphs(clipped, sizeof(clipped), text, max_chars > 0 ? max_chars : 0);
   drawText(cx - textWidth(clipped, scale) / 2, y, clipped, scale, color);
 }
 

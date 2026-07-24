@@ -148,7 +148,21 @@ int inSleepWindow(int start_minute, int end_minute) {
 
 void upperCopy(char* dest, size_t size, const char* source) {
   copyText(dest, size, source);
-  for (size_t i = 0; dest[i]; i++) dest[i] = static_cast<char>(toupper(static_cast<unsigned char>(dest[i])));
+  // ASCII a-z -> A-Z in place. Multibyte UTF-8 sequences are left untouched so
+  // their lead/continuation bytes stay valid; only a handful of Latin umlauts
+  // (ä ö ü) have upper-case forms we actually want, swapped byte-pair below.
+  for (size_t i = 0; dest[i]; i++) {
+    unsigned char b = static_cast<unsigned char>(dest[i]);
+    if (b >= 'a' && b <= 'z') dest[i] = static_cast<char>(b - 'a' + 'A');
+  }
+  // ä (0xC3 0xA4) -> Ä (0xC3 0x84), ö (0xC3 0xB6) -> Ö (0xC3 0x96), ü (0xC3 0xBC) -> Ü (0xC3 0x9C).
+  for (size_t i = 0; dest[i] && dest[i + 1]; i++) {
+    if (static_cast<unsigned char>(dest[i]) != 0xC3) continue;
+    unsigned char second = static_cast<unsigned char>(dest[i + 1]);
+    if (second == 0xA4) dest[i + 1] = static_cast<char>(0x84);
+    else if (second == 0xB6) dest[i + 1] = static_cast<char>(0x96);
+    else if (second == 0xBC) dest[i + 1] = static_cast<char>(0x9C);
+  }
 }
 
 void formatDisplayDate(const char* iso, const char* status, char* out, size_t size) {
