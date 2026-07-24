@@ -69,6 +69,7 @@ Thumbs.db
 .roo/
 .trae/
 .windsurf/
+.zcode/
 
 # InsForge & AI agent skills
 .insforge
@@ -83,3 +84,4 @@ Thumbs.db
 .roo
 .trae
 .windsurf
+.zcode
