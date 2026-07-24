@@ -4,15 +4,15 @@ import { randomBytes } from "node:crypto";
 
 const schemaMigrations = [
   "migrations/001_planner_lists.sql",
-  "migrations/20260627000000_create-health-daily-summaries.sql",
-  "migrations/20260627000100_create-health-targets.sql",
   "migrations/20260629052000_create-recipes.sql",
   "migrations/20260629070000_add-recipe-photo-pgm.sql",
-  "migrations/20260629083000_create-challenge-daily-logs.sql",
-  "migrations/20260629162000_create-meal-plan-entries.sql",
   "migrations/20260707000000_enable_rls_private_tables.sql",
   "migrations/20260721000000_add_daily_chores_list.sql",
-  "migrations/20260721120000_drop-recipe-nutrition-and-rating.sql"
+  "migrations/20260721120000_drop-recipe-nutrition-and-rating.sql",
+  "migrations/20260722120000_create-recipe-drafts.sql",
+  "migrations/20260723120000_drop-workout-challenge-health-mealplan.sql",
+  "migrations/20260724000000_create-pending-adds.sql",
+  "migrations/20260724130000_add-recipe-draft-mode.sql"
 ];
 
 const sampleDataMigrations = [
@@ -24,8 +24,7 @@ const functions = [
   ["kindle-dashboard-data", "functions/kindle-dashboard-data.ts", "Kindle Dashboard Data"],
   ["kindle-dashboard-events", "functions/kindle-dashboard-events.ts", "Kindle Dashboard Events"],
   ["kindle-dashboard-toggle", "functions/kindle-dashboard-toggle.ts", "Kindle Dashboard Toggle"],
-  ["telegram-webhook", "functions/telegram-webhook.ts", "Telegram Planner Webhook"],
-  ["health-sync", "functions/health-sync.ts", "Health Sync"]
+  ["telegram-webhook", "functions/telegram-webhook.ts", "Telegram Planner Webhook"]
 ];
 
 const flags = new Set(process.argv.slice(2));
@@ -64,7 +63,6 @@ if (includeSampleData) {
 if (!skipSecrets) {
   console.log("Ensuring generated backend secrets exist...");
   ensureSecret("TELEGRAM_WEBHOOK_SECRET", randomSecret());
-  ensureSecret("HEALTH_SYNC_TOKEN", randomSecret());
   ensureSecret("DASHBOARD_READ_TOKEN", randomSecret());
   ensureSecret("DASHBOARD_TOGGLE_TOKEN", randomSecret());
 }
