@@ -35,6 +35,7 @@ class Canvas {
   void drawTextCentered(int cx, int y, int max_width, const char* text, int scale, unsigned char color);
 
   void drawCheckbox(int x, int y, int size, int checked);
+  void drawBulletPoint(int x, int y, int size);
   void drawHeartIcon(int x, int y, int scale);
 
   // Draw a PGM (loaded via `cache`) scaled to cover the box, trimming near-white

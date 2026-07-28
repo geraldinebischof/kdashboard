@@ -8,7 +8,15 @@
       "title": "To Do",
       "items": [
         { "id": "1", "text": "Read paper notes", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
-        { "id": "2", "text": "Charge Kindle", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" }
+        { "id": "2", "text": "Charge Kindle", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "3", "text": "Write report", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "4", "text": "Review code", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "5", "text": "Test application", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "6", "text": "Update documentation", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "7", "text": "Fix bug #123", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "8", "text": "Deploy to staging", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "9", "text": "Schedule meeting", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "10", "text": "Send email updates", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" }
       ]
     },
     {
@@ -16,7 +24,37 @@
       "title": "Grocery",
       "items": [
         { "id": "3", "text": "Milk", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
-        { "id": "4", "text": "Eggs", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" }
+        { "id": "4", "text": "Eggs", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" },
+        { "id": "5", "text": "Bread", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "6", "text": "Butter", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "7", "text": "Cheese", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" },
+        { "id": "8", "text": "Apples", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "9", "text": "Oranges", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "10", "text": "Yogurt", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" },
+        { "id": "11", "text": "Chicken", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "12", "text": "Pasta", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "13", "text": "Rice", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" },
+        { "id": "14", "text": "Tomatoes", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "15", "text": "Lettuce", "done": false, "updated_at": "2026-06-28T08:10:00.000Z" },
+        { "id": "16", "text": "Olive oil", "done": true, "updated_at": "2026-06-28T08:11:00.000Z" }
+      ]
+    },
+    {
+      "key": "daily_chores",
+      "title": "Daily Chores",
+      "items": [
+        { "id": "17", "text": "Make bed", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "18", "text": "Wash dishes", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "19", "text": "Take out trash", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "20", "text": "Water plants", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "21", "text": "Clean kitchen", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "22", "text": "Vacuum", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "23", "text": "Do laundry", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "24", "text": "Sweep floors", "done": true, "updated_at": "2026-06-28T07:00:00.000Z" },
+        { "id": "25", "text": "Feed pets", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" },
+        { "id": "26", "text": "Walk dog", "done": false, "updated_at": "2026-06-28T08:00:00.000Z" }
+      ]
+    }
       ]
     },
     {

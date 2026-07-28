@@ -36,7 +36,7 @@ void drawListCard(Canvas& canvas, int x, int y, int w, int h, const List* list, 
     canvas.line(x + 10, y + 52, x + w - 10, y + 52, 2, 0);
     if (list->item_count > 0) {
       const int box_size = 20;
-      canvas.drawCheckbox(x + 18, y + 68, box_size, list->items[0].done);
+      canvas.drawBulletPoint(x + 18, y + 68, box_size);
       char item_text[96];
       upperCopy(item_text, sizeof(item_text), list->items[0].text);
       canvas.drawTextClipped(x + 18 + box_size + 8, y + 66, w - 36 - box_size - 8, item_text, 2, 0);
@@ -50,13 +50,11 @@ void drawListCard(Canvas& canvas, int x, int y, int w, int h, const List* list, 
   canvas.line(x + 10, y + 52, x + w - 10, y + 52, 2, 0);
   int row_capacity = (h - 124) / 42;
   if (row_capacity < 1) row_capacity = 1;
-  const int max_preview_rows = list_index == 1 ? 8 : 5;
-  if (row_capacity > max_preview_rows) row_capacity = max_preview_rows;
   const int shown = list->item_count > row_capacity ? row_capacity : list->item_count;
   const int box_size = 26;
   for (int i = 0; i < shown; i++) {
     const int row_y = y + 74 + i * 42;
-    canvas.drawCheckbox(x + 18, row_y + 3, box_size, list->items[i].done);
+    canvas.drawBulletPoint(x + 18, row_y + 3, box_size);
     char item_text[96];
     upperCopy(item_text, sizeof(item_text), list->items[i].text);
     canvas.drawTextClipped(x + 18 + box_size + 10, row_y, w - 36 - box_size - 10, item_text, 3, 0);

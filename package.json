@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build":"make -C kindle/native extension-zig ZIG=$(which zig)",
     "native:check": "make -C kindle/native check",
     "native:install": "node scripts/install-kindle-native.mjs",
     "native:proof": "node scripts/check-kindle-proof.mjs",

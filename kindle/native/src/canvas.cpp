@@ -363,6 +363,12 @@ void Canvas::drawCheckbox(int x, int y, int size, int checked) {
   }
 }
 
+void Canvas::drawBulletPoint(int x, int y, int size) {
+  const int diameter = size / 2;
+  const int radius = diameter / 2;
+  fillRoundedRect(x + size / 4, y + size / 4, diameter, diameter, radius, 0);
+}
+
 void Canvas::drawHeartIcon(int x, int y, int scale) {
   static const char* mask[] = {
     ".##....##.",
