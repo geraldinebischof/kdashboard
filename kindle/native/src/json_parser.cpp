@@ -178,6 +178,25 @@ int parseItems(const char* list_start, const char* list_end, List* list) {
     if (item->text[0]) list->item_count++;
     cursor = object_end + 1;
   }
+
+  // Render order: not-done items first, done items last. Stable so the
+  // backend's created_at-desc ordering within each group is preserved and so
+  // an optimistic in-place "done" patch on the cached payload
+  // (patchCachedItemDone) still moves the toggled item to the bottom on the
+  // next render, before the next full poll catches up.
+  if (list->item_count > 1) {
+    Item ordered[kMaxItems];
+    int write = 0;
+    for (int i = 0; i < list->item_count; i++) {
+      if (!list->items[i].done) ordered[write++] = list->items[i];
+    }
+    for (int i = 0; i < list->item_count; i++) {
+      if (list->items[i].done) ordered[write++] = list->items[i];
+    }
+    for (int i = 0; i < list->item_count; i++) {
+      list->items[i] = ordered[i];
+    }
+  }
   return 1;
 }
 

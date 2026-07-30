@@ -153,7 +153,10 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
       title: LIST_TITLES[key],
       items: plannerItems
         .filter((item) => item.list_key === key)
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .sort((a, b) => {
+          if (a.done !== b.done) return a.done ? 1 : -1;
+          return b.created_at.localeCompare(a.created_at);
+        })
         .map((item) => ({
           id: item.id,
           text: item.text,
