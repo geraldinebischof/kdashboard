@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "constants.h"
-#include "panel.h"    // exitButtonRectForScreen
 #include "runtime.h"  // g_running
 
 #ifdef __linux__
@@ -63,9 +62,38 @@ void* watcherMain(void* raw) {
   return NULL;
 }
 
+// Map a raw touchscreen coordinate (x, y) into screen space for orientation
+// index t (0..7): the 4 axis-aligned flips followed by the 4 transposed flips.
+// The same set the resolver used to probe blindly on every tap; now it is only
+// used to (a) find the correct orientation on the first tap and (b) apply the
+// locked orientation thereafter.
+void transformForOrientation(int t, int x, int y, int w, int h, int* ox, int* oy) {
+  const int mx = w - 1 - x;
+  const int my = h - 1 - y;
+  const int sw = (h > 1) ? static_cast<int>(static_cast<long>(y) * w / h) : 0;
+  const int sh = (w > 1) ? static_cast<int>(static_cast<long>(x) * h / w) : 0;
+  switch (t) {
+    case 0: *ox = x;   *oy = y;   break;
+    case 1: *ox = mx;  *oy = y;   break;
+    case 2: *ox = x;   *oy = my;  break;
+    case 3: *ox = mx;  *oy = my;  break;
+    case 4: *ox = sw;  *oy = sh;  break;
+    case 5: *ox = w - 1 - sw; *oy = sh;  break;
+    case 6: *ox = sw;  *oy = h - 1 - sh; break;
+    default: *ox = w - 1 - sw; *oy = h - 1 - sh; break;
+  }
+}
+
 }  // namespace
 
 int InputManager::applyTouchWithDebounce() {
+  // Hold off while the main thread is mid-render (writing the framebuffer and
+  // driving the e-ink refresh). Resolving another tap now would queue a second
+  // flash+refresh on top of the in-flight one and can wedge the e-ink driver.
+  if (touch_.busy) return 0;
+  // Don't queue a second action while the main loop still has one pending and
+  // unconsumed; rapid taps then collapse to a single dispatch per render.
+  if (touch_.pending_action != kTouchNone) return 0;
   const long long now = nowMs();
   if (now - last_action_ms_ < 700) return 0;
   const int w = screen_width_;
@@ -73,22 +101,32 @@ int InputManager::applyTouchWithDebounce() {
   const int x = x_;
   const int y = y_;
 
-  // EXIT button now lives at the far-left of the home panel header. Mirror
-  // that zone here as the fallback hit-test for the button.
-  if (x <= 240 && y >= kKindleStatusBarHeight && y <= kKindleStatusBarHeight + 160) {
-    touch_.pending_action = kTouchExit;
-    touch_.setPendingRect(exitButtonRectForScreen(w, h));
-  } else if (!touch_.applyTouchAt(x, y) &&
-             !touch_.applyTouchAt(w - 1 - x, y) &&
-             !touch_.applyTouchAt(x, h - 1 - y) &&
-             !touch_.applyTouchAt(w - 1 - x, h - 1 - y) &&
-             !touch_.applyTouchAt((static_cast<long>(y) * w) / (h > 1 ? h : 1), (static_cast<long>(x) * h) / (w > 1 ? w : 1)) &&
-             !touch_.applyTouchAt(w - 1 - (static_cast<long>(y) * w) / (h > 1 ? h : 1), (static_cast<long>(x) * h) / (w > 1 ? w : 1)) &&
-             !touch_.applyTouchAt((static_cast<long>(y) * w) / (h > 1 ? h : 1), h - 1 - (static_cast<long>(x) * h) / (w > 1 ? w : 1)) &&
-             !touch_.applyTouchAt(w - 1 - (static_cast<long>(y) * w) / (h > 1 ? h : 1), h - 1 - (static_cast<long>(x) * h) / (w > 1 ? w : 1))) {
+  // Every tappable control (including EXIT) is a registered touch region, so we
+  // resolve via applyTouchAt() in the correct screen orientation. The
+  // orientation is probed once (first confirmed hit) and then locked: trying all
+  // 8 transforms on every tap meant a touch on empty space would match a button
+  // under some *other* orientation and fire a random action.
+  int hit = -1;
+  if (locked_transform_ >= 0) {
+    int tx, ty;
+    transformForOrientation(locked_transform_, x, y, w, h, &tx, &ty);
+    if (touch_.applyTouchAt(tx, ty)) hit = locked_transform_;
+  } else {
+    for (int t = 0; t < 8; t++) {
+      int tx, ty;
+      transformForOrientation(t, x, y, w, h, &tx, &ty);
+      if (touch_.applyTouchAt(tx, ty)) {
+        hit = t;
+        break;
+      }
+    }
+  }
+  if (hit < 0) {
     fprintf(stderr, "input=miss x=%d y=%d width=%d height=%d regions=%d\n", x, y, w, h, touch_.count());
     return 0;
   }
+  locked_transform_ = hit;
+
   touch_.pending_touch_x = x;
   touch_.pending_touch_y = y;
   last_action_ms_ = now;
@@ -117,6 +155,20 @@ void InputManager::open() {
       continue;
     }
 
+    // A device "has a contact signal" if it advertises BTN_TOUCH or reports a
+    // multitouch tracking id. We use this to decide whether to gate resolution
+    // on a clean finger-down/up (so a held finger resolves once) instead of
+    // resolving on every sync frame.
+    unsigned char key_bits[64] = {0};
+    int has_btn_touch = 0;
+    if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) == 0 &&
+        BTN_TOUCH < static_cast<int>(sizeof(key_bits) * 8)) {
+      has_btn_touch = (key_bits[BTN_TOUCH / 8] >> (BTN_TOUCH % 8)) & 1;
+    }
+    int mt_min = 0;
+    int mt_max = 0;
+    device->has_contact_signal = has_btn_touch || readAbsRange(fd, ABS_MT_TRACKING_ID, &mt_min, &mt_max);
+
     // EVIOCGRAB gives us exclusive ownership of the touchscreen so the Kindle
     // framework doesn't also page-forward/back on every tap. Default on; set
     // KINDLE_DASHBOARD_EXCLUSIVE_GRAB=0 to fall back to shared (non-exclusive)
@@ -130,8 +182,9 @@ void InputManager::open() {
         fprintf(stderr, "input=grab_failed path=%s errno=%d; continuing non-exclusive\n", path, errno);
       }
     }
-    fprintf(stderr, "input=device path=%s grabbed=%d xrange=%d..%d yrange=%d..%d\n",
-            path, device->grabbed, device->min_x, device->max_x, device->min_y, device->max_y);
+    fprintf(stderr, "input=device path=%s grabbed=%d xrange=%d..%d yrange=%d..%d contact=%d\n",
+            path, device->grabbed, device->min_x, device->max_x, device->min_y, device->max_y, device->has_contact_signal);
+    if (device->has_contact_signal) any_contact_signal_ = 1;
     count_++;
   }
   fprintf(stderr, "input=opened count=%d\n", count_);
@@ -155,6 +208,14 @@ void InputManager::close() {
 
 int InputManager::poll() {
   if (count_ <= 0) return 0;
+
+  // Synthetic lift for bare ABS+SYN devices that never report a finger-up: if
+  // no contact-indicating event has arrived for a short while, treat the finger
+  // as lifted so the next contact can arm a fresh tap.
+  if (in_contact_ && !any_contact_signal_ && nowMs() - last_contact_ms_ > 150) {
+    in_contact_ = 0;
+  }
+
   for (int i = 0; i < count_; i++) {
     Device* device = &devices_[i];
     while (1) {
@@ -169,25 +230,43 @@ int InputManager::poll() {
         if (event.code == ABS_X || event.code == ABS_MT_POSITION_X) {
           x_ = scaleAbsValue(event.value, device->min_x, device->max_x, screen_width_);
           has_x_ = 1;
-          was_down_ = 1;
+          last_contact_ms_ = nowMs();
+          // Arm only on the up->down transition, not on every coordinate frame.
+          if (!in_contact_) { in_contact_ = 1; armed_ = 1; }
         } else if (event.code == ABS_Y || event.code == ABS_MT_POSITION_Y) {
           y_ = scaleAbsValue(event.value, device->min_y, device->max_y, screen_height_);
           has_y_ = 1;
-          was_down_ = 1;
+          last_contact_ms_ = nowMs();
+          if (!in_contact_) { in_contact_ = 1; armed_ = 1; }
         } else if (event.code == ABS_MT_TRACKING_ID) {
-          was_down_ = event.value >= 0 ? 1 : 0;
+          last_contact_ms_ = nowMs();
+          if (event.value >= 0) {
+            if (!in_contact_) { in_contact_ = 1; armed_ = 1; }  // new multitouch contact
+          } else {
+            in_contact_ = 0;  // contact ended
+          }
         }
       } else if (event.type == EV_KEY && (event.code == BTN_TOUCH || event.code == BTN_LEFT)) {
-        if (event.value > 0) was_down_ = 1;
-        if (event.value == 0 && was_down_ && has_x_ && has_y_) {
-          was_down_ = 0;
-          if (applyTouchWithDebounce()) {
+        last_contact_ms_ = nowMs();
+        if (event.value > 0) {
+          // Arm one resolution on the genuine up->down transition only. This
+          // ignores drivers that re-send BTN_TOUCH on every sync frame while
+          // held, which previously re-dispatched the action repeatedly.
+          if (!in_contact_) { in_contact_ = 1; armed_ = 1; }
+        } else {
+          in_contact_ = 0;  // finger lifted
+          if (armed_ && has_x_ && has_y_ && applyTouchWithDebounce()) {
+            armed_ = 0;
             fprintf(stderr, "input=action tap action=%d x=%d y=%d\n", static_cast<int>(touch_.pending_action), x_, y_);
             return 1;
           }
         }
-      } else if (event.type == EV_SYN && has_x_ && has_y_) {
+      } else if (event.type == EV_SYN && armed_ && has_x_ && has_y_) {
+        // Resolve at most once per contact: the arm set on the up->down
+        // transition is consumed here, so a held finger never re-dispatches
+        // the action (and thus can't drift onto a neighbouring button).
         if (applyTouchWithDebounce()) {
+          armed_ = 0;
           fprintf(stderr, "input=action touch action=%d x=%d y=%d\n", static_cast<int>(touch_.pending_action), x_, y_);
           return 1;
         }

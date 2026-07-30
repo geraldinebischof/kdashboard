@@ -31,11 +31,27 @@ class App {
   // Consume the pending tap and act on it. Returns 0 none, 1 handled, 2 refresh.
   int handlePendingTouch();
 
-  RenderContext renderContext() { return RenderContext{touch_, pgm_cache_, options_.invert_images}; }
+  RenderContext renderContext() {
+    return RenderContext{touch_, pgm_cache_, options_.invert_images,
+                         list_offset_, list_page_size_, list_item_count_,
+                         cookbook_offset_, cookbook_page_size_, recipe_total_};
+  }
 
   Options options_ = {};
   int last_screen_width_ = kBitmapFallbackWidth;
   int last_screen_height_ = kBitmapFallbackHeight;
+
+  // Paginated view state. Persists across renders so an SSE refresh keeps the
+  // user on their current page (clamped at render time); reset to 0 when a list
+  // or the cookbook is opened fresh from the touch handler. The *_count fields
+  // are written each render so the touch handler can wrap PREV/NEXT around the
+  // first/last page.
+  int list_offset_ = 0;
+  int list_page_size_ = 8;
+  int list_item_count_ = 0;
+  int cookbook_offset_ = 0;
+  int cookbook_page_size_ = 8;
+  int recipe_total_ = 0;
 
   TouchRegionRegistry touch_;
   PgmCache pgm_cache_;

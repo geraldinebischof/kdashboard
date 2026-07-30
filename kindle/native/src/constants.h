@@ -26,5 +26,6 @@ inline constexpr int kMaxRecipeIngredients = 8;
 inline constexpr int kBitmapFallbackWidth = 760;
 inline constexpr int kBitmapFallbackHeight = 1024;
 inline constexpr int kKindleStatusBarHeight = 66;
+inline constexpr int kPageFooterHeight = 52;
 
 #endif  // KINDLE_DASHBOARD_CONSTANTS_H

@@ -18,7 +18,11 @@ enum TouchAction {
   kTouchHome = 8,
   kTouchDeleteItem = 9,      // X button on a list row -> open confirm overlay
   kTouchConfirmDelete = 10,  // YES on the confirm overlay -> delete the item
-  kTouchCancelDelete = 11    // NO (or backdrop) on the confirm overlay -> dismiss
+  kTouchCancelDelete = 11,   // NO (or backdrop) on the confirm overlay -> dismiss
+  kTouchListPrevPage = 12,   // list footer PREV -> show the previous page of items
+  kTouchListNextPage = 13,   // list footer NEXT -> show the next page of items
+  kTouchCookbookPrevPage = 14,  // cookbook footer PREV -> previous page of recipes
+  kTouchCookbookNextPage = 15   // cookbook footer NEXT -> next page of recipes
 };
 
 struct Item {

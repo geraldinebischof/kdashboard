@@ -22,6 +22,17 @@ struct RenderContext {
   TouchRegionRegistry& touch;
   PgmCache& pgm_cache;
   int invert_images;
+  // Mutable scroll state for paginated panels. Panels read `*_offset` (the index
+  // of the first record to show) and write back the clamped offset, the page
+  // size, and the total record count they computed, so the input layer can
+  // advance by a whole page (and wrap around) on the next PREV/NEXT tap. Owned
+  // by App so it survives across renders/refreshes.
+  int& list_offset;
+  int& list_page_size;
+  int& list_item_count;
+  int& cookbook_offset;
+  int& cookbook_page_size;
+  int& recipe_count;
 };
 
 // Geometry of the always-present EXIT button. Shared by the header chrome and

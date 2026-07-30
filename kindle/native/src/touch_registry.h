@@ -38,6 +38,11 @@ class TouchRegionRegistry {
   // Pending tap hand-off: written when a tap resolves, read and cleared by the
   // main loop's handlePendingTouch.
   TouchAction pending_action = kTouchNone;
+  // Set by the main thread while it is writing the framebuffer / driving an
+  // e-ink refresh; the input thread reads it to avoid resolving a new tap (and
+  // queuing another flash+refresh) on top of the in-flight one. Benign racy,
+  // same as the pending_* hand-off.
+  volatile int busy = 0;
   int pending_list_index = -1;
   int pending_recipe_index = -1;
   int pending_item_index = -1;  // row index within the list (delete overlay needs it)

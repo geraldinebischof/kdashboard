@@ -75,6 +75,22 @@ int shouldRepaintCachedTick(int tick) {
   return tick == 5;
 }
 
+// Circular page wrapping used by the PREV/NEXT touch handlers. NEXT past the
+// last page wraps to the first (offset 0); PREV before the first page wraps to
+// the start of the last page. The final offset is still snapped/clamped at
+// render time, so a stale count between renders degrades to the nearest page
+// instead of going out of bounds.
+int wrapNextOffset(int offset, int page_size, int count) {
+  return (page_size > 0 && count > 0 && offset >= count) ? 0 : offset;
+}
+
+int wrapPrevOffset(int offset, int page_size, int count) {
+  if (offset >= 0) return offset;
+  if (page_size <= 0 || count <= 0) return 0;
+  const int pages = (count + page_size - 1) / page_size;
+  return (pages - 1) * page_size;
+}
+
 }  // namespace
 
 void App::drawCurrent(Canvas& canvas, const Dashboard& dashboard, const char* status) {
@@ -124,7 +140,13 @@ void App::renderPayload(const char* payload, const char* status, const char* dum
     return;
   }
   RenderContext framebuffer_ctx = renderContext();
-  if (framebuffer_.render(navigator_, dashboard, status, framebuffer_ctx, save_pgm, last_screen_width_, last_screen_height_)) {
+  // Mark the input thread busy for the duration of the framebuffer write +
+  // e-ink refresh so a rapid follow-up tap can't stack a second flash+refresh
+  // on top of this one (which wedges the e-ink controller).
+  touch_.busy = 1;
+  const int fb_ok = framebuffer_.render(navigator_, dashboard, status, framebuffer_ctx, save_pgm, last_screen_width_, last_screen_height_);
+  touch_.busy = 0;
+  if (fb_ok) {
     freeDashboard(&dashboard);
     fprintf(stderr, "timing=render status=framebuffer ms=%lld\n", monotonicMs() - started);
     return;
@@ -189,6 +211,7 @@ int App::handlePendingTouch() {
 
   if (action == kTouchOpenList) {
     fprintf(stderr, "touch=open-list index=%d\n", touch_.pending_list_index);
+    list_offset_ = 0;  // opening a list fresh always starts on page 1
     navigator_.openList(touch_.pending_list_index);
     return 1;
   }
@@ -201,10 +224,31 @@ int App::handlePendingTouch() {
 
   if (action == kTouchOpenRecipes) {
     fprintf(stderr, "touch=open-recipes\n");
+    cookbook_offset_ = 0;  // opening the cookbook fresh always starts on page 1
     navigator_.openRecipes();
     return 1;
   }
 
+  if (action == kTouchListPrevPage) {
+    list_offset_ = wrapPrevOffset(list_offset_ - list_page_size_, list_page_size_, list_item_count_);
+    fprintf(stderr, "touch=list-prev offset=%d\n", list_offset_);
+    return 1;
+  }
+  if (action == kTouchListNextPage) {
+    list_offset_ = wrapNextOffset(list_offset_ + list_page_size_, list_page_size_, list_item_count_);
+    fprintf(stderr, "touch=list-next offset=%d\n", list_offset_);
+    return 1;
+  }
+  if (action == kTouchCookbookPrevPage) {
+    cookbook_offset_ = wrapPrevOffset(cookbook_offset_ - cookbook_page_size_, cookbook_page_size_, recipe_total_);
+    fprintf(stderr, "touch=cookbook-prev offset=%d\n", cookbook_offset_);
+    return 1;
+  }
+  if (action == kTouchCookbookNextPage) {
+    cookbook_offset_ = wrapNextOffset(cookbook_offset_ + cookbook_page_size_, cookbook_page_size_, recipe_total_);
+    fprintf(stderr, "touch=cookbook-next offset=%d\n", cookbook_offset_);
+    return 1;
+  }
 
   if (action == kTouchToggleItem) {
     const int next_done = touch_.pending_item_done ? 0 : 1;

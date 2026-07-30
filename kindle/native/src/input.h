@@ -51,6 +51,10 @@ class InputManager {
     int max_y;
     int has_x_range;
     int has_y_range;
+    // True when the device reports a real contact signal (BTN_TOUCH or a
+    // multitouch tracking id). Such devices arm/disarm resolution per tap; a
+    // bare ABS+SYN device has no finger-up signal and is throttled by debounce.
+    int has_contact_signal;
   };
 
   // These are exercised only by the Linux implementations in input.cpp; the
@@ -61,7 +65,22 @@ class InputManager {
   [[maybe_unused]] int y_ = -1;
   [[maybe_unused]] int has_x_ = 0;
   [[maybe_unused]] int has_y_ = 0;
-  [[maybe_unused]] int was_down_ = 0;
+  // Finger is currently down. Cleared on a real lift (BTN_TOUCH up / multitouch
+  // tracking-id < 0), or — for devices with no lift signal — by a quiet gap.
+  [[maybe_unused]] int in_contact_ = 0;
+  // A fresh contact has begun and not yet been resolved. Set only on the
+  // up->down transition (NOT on every frame), so a held finger or a driver that
+  // re-sends BTN_TOUCH every sync resolves the tap exactly once.
+  [[maybe_unused]] int armed_ = 0;
+  // Timestamp of the most recent contact-indicating event; drives the synthetic
+  // lift used for bare ABS+SYN devices that never report a finger-up.
+  [[maybe_unused]] long long last_contact_ms_ = 0;
+  // True if ANY opened device reports a real contact signal (BTN_TOUCH / MT).
+  [[maybe_unused]] int any_contact_signal_ = 0;
+  // Screen orientation locked after the first confirmed tap (index 0..7 into
+  // transformForOrientation), or -1 while still unknown. Locking stops empty-
+  // space taps from matching a button under a different orientation.
+  [[maybe_unused]] int locked_transform_ = -1;
   [[maybe_unused]] long long last_action_ms_ = 0;
 
 #ifdef __linux__

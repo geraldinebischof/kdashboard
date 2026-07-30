@@ -117,6 +117,62 @@ void drawDeleteButton(Canvas& canvas, int row_x, int row_y, int row_w, int row_h
   ctx.touch.add(btn_rect, kTouchDeleteItem, -1, item_index, item_id, 0);
 }
 
+// Pagination helpers shared by ListPanel and CookbookPanel. The scroll offset is
+// the index of the first record shown; it is snapped down to a page boundary and
+// clamped to the last valid page so a page always starts on a boundary even if
+// the underlying list grew or shrank since the previous render.
+int clampPageStart(int offset, int page_size, int count) {
+  if (count <= 0 || page_size <= 0) return 0;
+  if (offset < 0) return 0;
+  const int snapped = (offset / page_size) * page_size;
+  const int last_start = ((count - 1) / page_size) * page_size;
+  return snapped > last_start ? last_start : snapped;
+}
+
+int pageCount(int page_size, int count) {
+  if (count <= 0 || page_size <= 0) return 1;
+  return (count + page_size - 1) / page_size;
+}
+
+// Draw a single PREV/NEXT control. Disabled controls (first page has no PREV,
+// last page has no NEXT) are drawn dimmed and register no touch region, so a
+// tap on them simply does nothing.
+void drawPageButton(Canvas& canvas, int x, int y, int w, int h, const char* label,
+                    int enabled, TouchAction action, RenderContext& ctx) {
+  const unsigned char ink = enabled ? 0 : 200;
+  canvas.strokeRoundedRect(x, y, w, h, 12, enabled ? 3 : 2, ink);
+  canvas.drawTextCentered(x + w / 2, y + (h - 6 * 3) / 2 + 2, w - 12, label, 3, ink);
+  if (enabled) {
+    Rect rect = {x, y, w, h};
+    ctx.touch.add(rect, action, -1, -1, "", 0);
+  }
+}
+
+// Footer with PREV ... "page X / Y" ... NEXT. Shown only by panels whose record
+// count exceeds one page. `shell_bottom` is the bottom edge of the content shell.
+void drawPageFooter(Canvas& canvas, int shell_x, int shell_w, int shell_bottom,
+                    int offset, int page_size, int count,
+                    TouchAction prev_action, TouchAction next_action, RenderContext& ctx) {
+  const int footer_h = kPageFooterHeight;
+  const int footer_x = shell_x + 18;
+  const int footer_w = shell_w - 36;
+  const int footer_y = shell_bottom - footer_h - 14;
+  const int btn_w = 120;
+  const int btn_h = 40;
+  const int btn_y = footer_y + (footer_h - btn_h) / 2;
+  // Paging is circular (PREV on the first page wraps to the last, NEXT on the
+  // last wraps to the first), so both controls are always active while a footer
+  // is shown. The "page X / Y" indicator still tells the user where they are.
+  drawPageButton(canvas, footer_x, btn_y, btn_w, btn_h, "PREV", 1, prev_action, ctx);
+  drawPageButton(canvas, footer_x + footer_w - btn_w, btn_y, btn_w, btn_h, "NEXT", 1, next_action, ctx);
+
+  const int page = page_size > 0 ? offset / page_size + 1 : 1;
+  char indicator[24];
+  snprintf(indicator, sizeof(indicator), "%d / %d", page, pageCount(page_size, count));
+  canvas.drawTextCentered(footer_x + footer_w / 2, btn_y + (btn_h - 6 * 3) / 2 + 2,
+                          footer_w - 2 * btn_w - 48, indicator, 3, 0);
+}
+
 // Modal-style confirmation overlay shown when the user taps a row's X. Draws on
 // top of the list and registers NO / YES buttons (added last, so they take
 // priority over every row region beneath them).
@@ -150,6 +206,12 @@ void drawDeleteConfirmOverlay(Canvas& canvas, int shell_w, int shell_y, int shel
   const int btns_total = 2 * btn_w + btn_gap;
   const int btn_left_x = overlay_x + (overlay_w - btns_total) / 2;
   const int btn_right_x = btn_left_x + btn_w + btn_gap;
+
+  // Backdrop: a tap anywhere in the shell outside the buttons dismisses the
+  // overlay. Registered before NO/YES (so those still win) and after every row /
+  // footer region, so underlying controls can never fire while the modal is up.
+  Rect backdrop_rect = {0, shell_y, shell_w, shell_h};
+  ctx.touch.add(backdrop_rect, kTouchCancelDelete, -1, -1, item_id, 0);
 
   // NO (left) -> cancel
   canvas.strokeRoundedRect(btn_left_x, btn_y, btn_w, btn_h, 16, 3, 0);
@@ -271,6 +333,7 @@ void ListPanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
   const int shell_x = 0;
   const int shell_y = kKindleStatusBarHeight;
   const int shell_h = canvas.height - shell_y;
+  const int shell_bottom = shell_y + shell_h;
   canvas.strokeRoundedRect(shell_x, shell_y, shell_w, shell_h, 24, 3, 0);
 
   int list_index = state.list_index;
@@ -289,25 +352,52 @@ void ListPanel::render(Canvas& canvas, const Dashboard& dashboard, const char* s
   const int row_w = shell_w - 36;
   const int row_h = 72;
   const int row_gap = 10;
+  const int row_stride = row_h + row_gap;
   const int first_y = list_header_y + list_header_h + 18;
-  const int max_rows = (shell_y + shell_h - first_y - 24) / (row_h + row_gap);
-  const int shown = list->item_count < max_rows ? list->item_count : max_rows;
+
+  // Rows that fit on one screen with no paging footer. If the list overflows,
+  // reserve footer space and recompute so every page (except the last) is full.
+  int page_size = (shell_bottom - first_y - 24) / row_stride;
+  if (page_size < 1) page_size = 1;
+  const int item_count = list->item_count;
+  const int needs_pages = item_count > page_size ? 1 : 0;
+  if (needs_pages) {
+    page_size = (shell_bottom - first_y - 24 - kPageFooterHeight) / row_stride;
+    if (page_size < 1) page_size = 1;
+  }
+
+  // Preserve the page across refreshes but clamp/snapping it to a valid page
+  // boundary in case items were added or removed.
+  const int offset = clampPageStart(ctx.list_offset, page_size, item_count);
+  ctx.list_offset = offset;
+  ctx.list_page_size = page_size;
+  ctx.list_item_count = item_count;
+
+  const int remaining = item_count - offset;
+  const int shown = remaining < page_size ? remaining : page_size;
   const int box_size = 30;
   const int delete_reserve = kDeleteBtnSize + kDeleteBtnGap * 2;  // room for X + breathing space
   for (int i = 0; i < shown; i++) {
-    const int row_y = first_y + i * (row_h + row_gap);
+    const int item_index = offset + i;
+    const int row_y = first_y + i * row_stride;
     Rect row_rect = {row_x, row_y, row_w, row_h};
     canvas.strokeRoundedRect(row_rect.x, row_rect.y, row_rect.w, row_rect.h, 14, 2, 0);
-    ctx.touch.add(row_rect, kTouchToggleItem, list_index, i, list->items[i].id, list->items[i].done);
-    canvas.drawCheckbox(row_x + 18, row_y + (row_h - box_size) / 2, box_size, list->items[i].done);
+    ctx.touch.add(row_rect, kTouchToggleItem, list_index, item_index, list->items[item_index].id, list->items[item_index].done);
+    canvas.drawCheckbox(row_x + 18, row_y + (row_h - box_size) / 2, box_size, list->items[item_index].done);
     char item_text[96];
-    upperCopy(item_text, sizeof(item_text), list->items[i].text);
+    upperCopy(item_text, sizeof(item_text), list->items[item_index].text);
     canvas.drawTextClipped(row_x + 18 + box_size + 14, row_y + 20,
                            row_w - 36 - box_size - 14 - delete_reserve, item_text, 3, 0);
-    drawDeleteButton(canvas, row_x, row_y, row_w, row_h, i, list->items[i].id, ctx);
+    drawDeleteButton(canvas, row_x, row_y, row_w, row_h, item_index, list->items[item_index].id, ctx);
   }
 
-  if (state.delete_item_index >= 0 && state.delete_item_index < list->item_count) {
+  if (needs_pages) {
+    drawPageFooter(canvas, shell_x, shell_w, shell_bottom, offset, page_size, item_count,
+                   kTouchListPrevPage, kTouchListNextPage, ctx);
+  }
+
+  // delete_item_index is an absolute item index (the row X registers offset + i).
+  if (state.delete_item_index >= 0 && state.delete_item_index < item_count) {
     const Item& target = list->items[state.delete_item_index];
     drawDeleteConfirmOverlay(canvas, shell_w, shell_y, shell_h, target.text, target.id, ctx);
   }
@@ -329,20 +419,53 @@ void CookbookPanel::render(Canvas& canvas, const Dashboard& dashboard, const cha
   const int gap = 10;
   const int card_w = (shell_w - 36 - gap) / 2;
   const int card_h = 96;
+  const int card_stride = card_h + gap;
   const int first_y = sub_y + 98;
-  for (int i = 0; i < dashboard.recipe_count && i < kMaxRecipes; i++) {
+  const int shell_bottom = shell_y + shell_h;
+
+  // Two recipe cards per row; page size is rows * 2. Reserve a paging footer
+  // only when recipes overflow a single screen.
+  int card_rows = (shell_bottom - first_y - 18) / card_stride;
+  if (card_rows < 1) card_rows = 1;
+  int page_size = card_rows * 2;
+  const int recipe_count = dashboard.recipe_count;
+  const int needs_pages = recipe_count > page_size ? 1 : 0;
+  if (needs_pages) {
+    card_rows = (shell_bottom - first_y - 18 - kPageFooterHeight) / card_stride;
+    if (card_rows < 1) card_rows = 1;
+    page_size = card_rows * 2;
+  }
+
+  const int offset = clampPageStart(ctx.cookbook_offset, page_size, recipe_count);
+  ctx.cookbook_offset = offset;
+  ctx.cookbook_page_size = page_size;
+  ctx.recipe_count = recipe_count;
+
+  const int remaining = recipe_count - offset;
+  const int shown = remaining < page_size ? remaining : page_size;
+  // Use the same bottom reserve the page-size math used, so every row the loop
+  // claims to fit actually fits above the footer.
+  const int page_bottom = shell_bottom - 18 - (needs_pages ? kPageFooterHeight : 0);
+  for (int i = 0; i < shown; i++) {
+    const int recipe_index = offset + i;
+    if (recipe_index >= kMaxRecipes) break;
     const int column = i % 2;
     const int row = i / 2;
     const int card_x = shell_x + 18 + column * (card_w + gap);
-    const int card_y = first_y + row * (card_h + gap);
-    if (card_y + card_h > shell_y + shell_h - 18) break;
+    const int card_y = first_y + row * card_stride;
+    if (card_y + card_h > page_bottom) break;
     Rect card_rect = {card_x, card_y, card_w, card_h};
     canvas.strokeRoundedRect(card_rect.x, card_rect.y, card_rect.w, card_rect.h, 16, 3, 0);
-    ctx.touch.add(card_rect, kTouchOpenRecipe, -1, i, "", 0);
-    canvas.drawTextClipped(card_x + 14, card_y + 14, card_w - 28, dashboard.recipes[i].title, 3, 0);
+    ctx.touch.add(card_rect, kTouchOpenRecipe, -1, recipe_index, "", 0);
+    canvas.drawTextClipped(card_x + 14, card_y + 14, card_w - 28, dashboard.recipes[recipe_index].title, 3, 0);
     canvas.line(card_x + 10, card_y + 54, card_x + card_w - 10, card_y + 54, 2, 0);
     canvas.drawHeartIcon(card_x + card_w - 92, card_y + 66, 2);
     canvas.drawText(card_x + card_w - 70, card_y + 72, "OPEN", 2, 0);
+  }
+
+  if (needs_pages) {
+    drawPageFooter(canvas, shell_x, shell_w, shell_bottom, offset, page_size, recipe_count,
+                   kTouchCookbookPrevPage, kTouchCookbookNextPage, ctx);
   }
 }
 
