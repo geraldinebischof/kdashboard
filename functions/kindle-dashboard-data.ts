@@ -63,7 +63,7 @@ const LIST_TITLES: Record<ListKey, string> = {
   grocery: "Grocery",
   daily_chores: "Daily Chores"
 };
-const COMPLETED_ITEM_HIDE_AFTER_MS = 24 * 60 * 60 * 1000;
+
 
 export default async function(req: Request): Promise<Response> {
   const requestStarted = timeMs();
@@ -140,8 +140,8 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
   const ingredientsQueryMs = elapsedMs(ingredientsStarted);
 
   const buildStarted = timeMs();
-  const staleCompletedCutoff = Date.now() - COMPLETED_ITEM_HIDE_AFTER_MS;
-  const plannerItems = (items as PlannerItem[]).filter((item) => shouldShowPlannerItem(item, staleCompletedCutoff));
+
+  const plannerItems = (items as PlannerItem[]);
   const ingredientsByRecipeId = groupIngredientsByRecipeId(ingredientRows);
   const recipePayloads = recipeRows.map((recipe) => recipePayload(recipe, ingredientsByRecipeId));
 
@@ -211,7 +211,7 @@ function recipePayload(recipe: RecipeRow, ingredientsByRecipeId: Map<string, Rec
       }))
   };
 }
-
+//TODO europe
 function dashboardLocalDate(): string {
   const timezone = Deno.env.get("DASHBOARD_TIMEZONE") || "Asia/Kolkata";
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -224,12 +224,7 @@ function dashboardLocalDate(): string {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
-function shouldShowPlannerItem(item: PlannerItem, staleCompletedCutoff: number): boolean {
-  if (!item.done) return true;
-  const updatedAt = Date.parse(item.updated_at);
-  if (!Number.isFinite(updatedAt)) return true;
-  return updatedAt > staleCompletedCutoff;
-}
+
 
 // Delete completed TO DO items whose updated_at falls before the start of today
 // (in DASHBOARD_TIMEZONE). "Following day" cleanup: the moment the local date
