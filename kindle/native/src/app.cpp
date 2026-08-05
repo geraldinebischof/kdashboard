@@ -274,8 +274,13 @@ int App::handlePendingTouch() {
     fprintf(stderr, "touch=delete-list-item-confirm id=%s\n", touch_.pending_item_id);
     navigator_.cancelDeleteItem();
     removeCachedItem(options_.cache, touch_.pending_item_id);
-    const char* delete_url = options_.delete_url[0] ? options_.delete_url : options_.toggle_url;
-    client_.postDeleteItemAsync(delete_url, options_.toggle_token, touch_.pending_item_id);
+    // Do NOT fall back to the toggle URL when the delete URL is unset: the
+    // toggle endpoint only flips "done" and never removes the row, so a delete
+    // posted there would be silently dropped and the item would reappear on the
+    // next backend refresh. postDeleteItemAsync logs a "post-skipped
+    // missing_config" warning when the URL is empty, which is the correct
+    // behavior until the delete endpoint is configured.
+    client_.postDeleteItemAsync(options_.delete_url, options_.toggle_token, touch_.pending_item_id);
     return 1;
   }
 
