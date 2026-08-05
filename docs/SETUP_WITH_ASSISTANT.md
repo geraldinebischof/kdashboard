@@ -200,8 +200,8 @@ If Telegram commands do nothing, ask:
 
 ```text
 Please debug Telegram for this kit. Check the webhook URL, webhook secret,
-TELEGRAM_ALLOWED_CHAT_ID, and recent function behavior. Do not reveal full
-tokens in the output.
+TELEGRAM_ALLOWED_CHAT_IDS (comma-separated; legacy singular still honored), and
+recent function behavior. Do not reveal full tokens in the output.
 ```
 
 If the KUAL menu opens but nothing renders, ask:

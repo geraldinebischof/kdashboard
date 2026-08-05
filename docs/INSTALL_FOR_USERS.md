@@ -86,6 +86,9 @@ npm run telegram:configure -- \
   --webhook-url https://your-project.insforge.app/functions/telegram-webhook
 ```
 
+`--chat-id` is repeatable, so pass one per person you want to authorize (each
+may also be comma-separated, e.g. `--chat-id 111,222`).
+
 Try a Telegram command:
 
 ```text
@@ -99,6 +102,37 @@ The `/` autocomplete menu (registered by `telegram:configure`) lists the
 available commands — tap one and the bot prompts you for the rest. The catalog
 also appears in chat after every successful action, so you always have it one
 glance away.
+
+### Add another person
+
+This kit shares one dashboard, so you can let a family member send the same
+updates (add/complete/remove items, manage recipes) from their own Telegram
+chat. Each person uses a separate 1:1 DM with the bot; their chat ID lives in
+the allowlist alongside yours.
+
+1. Ask the family member to send any message to your bot (this makes their chat
+   ID discoverable).
+2. List every chat that has messaged the bot and copy their chat ID:
+
+   ```sh
+   npm run telegram:chat-id -- --bot-token 123456789:telegram-bot-token
+   ```
+
+3. Re-run `telegram:configure` with **both** your chat ID and theirs — the
+   plural secret overrides the legacy single value, so include your own ID or
+   you will lock yourself out:
+
+   ```sh
+   npm run telegram:configure -- \
+     --bot-token 123456789:telegram-bot-token \
+     --chat-id 123456789 \
+     --chat-id 987654321 \
+     --webhook-url https://your-project.insforge.app/functions/telegram-webhook
+   ```
+
+Both chats now share the same lists and recipes. Per-chat drafts
+(`/newrecipe`, pending adds) stay independent, and replies only go back to the
+sender's chat.
 
 ## Supported Telegram Messages
 
@@ -383,5 +417,7 @@ Then replace the installed KUAL extension files, keeping your local `config.sh`.
   checklist state.
 - The Kindle reads dashboard data through your deployed function URLs using
   the read token.
-- This kit is single-owner by design. For a hosted multi-user service, every
-  table and function would need per-user scoping and device pairing.
+- This kit is single-dashboard by design: multiple authorized Telegram chats
+  share one set of lists and recipes, with no per-user data isolation. For a
+  hosted multi-user service, every table and function would need per-user
+  scoping and device pairing.

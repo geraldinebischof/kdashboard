@@ -118,8 +118,8 @@ export default async function(req: Request): Promise<Response> {
 
   const update = (await req.json()) as TelegramUpdate;
   const chatId = String(update.message?.chat?.id ?? "");
-  const allowedChatId = requiredEnv("TELEGRAM_ALLOWED_CHAT_ID");
-  if (chatId !== allowedChatId) {
+  const allowedChatIds = getAllowedChatIds();
+  if (!allowedChatIds.has(chatId)) {
     return jsonResponse({ ok: true, ignored: true, reason: "chat_not_allowed" });
   }
 
@@ -1170,6 +1170,19 @@ function requiredEnv(key: string): string {
   const value = Deno.env.get(key);
   if (!value) throw new Error(`Missing ${key}`);
   return value;
+}
+
+// Plural TELEGRAM_ALLOWED_CHAT_IDS (comma-separated) is authoritative. Falls
+// back to the legacy singular TELEGRAM_ALLOWED_CHAT_ID so existing single-owner
+// backends keep working. Fail-closed if neither is configured.
+function getAllowedChatIds(): Set<string> {
+  const plural = Deno.env.get("TELEGRAM_ALLOWED_CHAT_IDS");
+  const singular = Deno.env.get("TELEGRAM_ALLOWED_CHAT_ID");
+  const raw = plural ?? singular;
+  if (!raw) throw new Error("Missing TELEGRAM_ALLOWED_CHAT_IDS (or TELEGRAM_ALLOWED_CHAT_ID)");
+  const ids = raw.split(",").map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) throw new Error("TELEGRAM_ALLOWED_CHAT_IDS resolved to an empty list");
+  return new Set(ids);
 }
 
 function errorMessage(error: unknown): string {

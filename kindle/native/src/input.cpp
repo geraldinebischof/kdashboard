@@ -95,7 +95,7 @@ int InputManager::applyTouchWithDebounce() {
   // unconsumed; rapid taps then collapse to a single dispatch per render.
   if (touch_.pending_action != kTouchNone) return 0;
   const long long now = nowMs();
-  if (now - last_action_ms_ < 700) return 0;
+  if (now - last_action_ms_ < 300) return 0;
   const int w = screen_width_;
   const int h = screen_height_;
   const int x = x_;

@@ -1,25 +1,43 @@
 import { execFileSync } from "node:child_process";
 
 const args = new Map();
+const chatIds = [];
 for (let index = 2; index < process.argv.length; index += 2) {
-  args.set(process.argv[index], process.argv[index + 1]);
+  const flag = process.argv[index];
+  const value = process.argv[index + 1];
+  if (flag === "--chat-id") {
+    chatIds.push(...String(value).split(",").map((id) => id.trim()).filter(Boolean));
+  } else {
+    args.set(flag, value);
+  }
 }
 
 const botToken = args.get("--bot-token") || process.env.TELEGRAM_BOT_TOKEN;
-const chatId = args.get("--chat-id") || process.env.TELEGRAM_ALLOWED_CHAT_ID;
 const baseUrl = args.get("--base-url") || process.env.INSFORGE_BASE_URL || "";
 const webhookUrl =
   args.get("--webhook-url") ||
   process.env.TELEGRAM_WEBHOOK_URL ||
   (baseUrl ? `${baseUrl.replace(/\/+$/, "")}/functions/telegram-webhook` : "");
 
+// CLI flags win; fall back to the plural env, then the legacy singular env.
+const resolvedChatIds = chatIds.length > 0
+  ? chatIds
+  : String(process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_ALLOWED_CHAT_ID || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+const uniqueChatIds = [...new Set(resolvedChatIds)];
+const chatId = uniqueChatIds.join(",");
+
 if (!botToken || !chatId || !webhookUrl) {
-  console.error("Usage: npm run telegram:configure -- --bot-token <token> --chat-id <chat-id> --webhook-url <url>");
+  console.error("Usage: npm run telegram:configure -- --bot-token <token> --chat-id <chat-id> [--chat-id <chat-id> ...] --webhook-url <url>");
+  console.error("       (each --chat-id may also be comma-separated, e.g. --chat-id 111,222)");
   process.exit(1);
 }
 
 setSecret("TELEGRAM_BOT_TOKEN", botToken);
-setSecret("TELEGRAM_ALLOWED_CHAT_ID", chatId);
+setSecret("TELEGRAM_ALLOWED_CHAT_IDS", chatId);
 
 const webhookSecret = getSecret("TELEGRAM_WEBHOOK_SECRET");
 const response = postTelegramWebhook(botToken, webhookUrl, webhookSecret);
@@ -53,7 +71,7 @@ if (!commandsResponse.ok) {
 
 console.log(`Telegram webhook registered: ${webhookUrl}`);
 console.log(`Telegram command menu registered (${commands.length} commands).`);
-console.log(`Allowed chat ID set: ${chatId}`);
+console.log(`Allowed chat IDs set: ${uniqueChatIds.length} (${chatId})`);
 
 function setSecret(key, value) {
   try {

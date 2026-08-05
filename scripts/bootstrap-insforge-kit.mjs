@@ -80,7 +80,7 @@ console.log("Next: set Telegram secrets with npm run telegram:configure, then co
 
 function applyMigration(path) {
   console.log(`- ${path}`);
-  run(["db", "query", readFileSync(path, "utf8")]);
+  run(["db", "query", "--", readFileSync(path, "utf8")]);
 }
 
 function ensureSecret(key, value) {

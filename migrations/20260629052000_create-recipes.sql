@@ -33,34 +33,3 @@ CREATE TRIGGER recipe_ingredients_updated_at
   BEFORE UPDATE ON recipe_ingredients
   FOR EACH ROW
   EXECUTE FUNCTION system.update_updated_at();
-
-WITH recipe AS (
-  INSERT INTO recipes (
-    id,
-    title,
-    instructions
-  )
-  VALUES (
-    'f4bf38e0-156f-466a-a459-52006d29d170',
-    'Sample Breakfast Bowl',
-    'Assemble fruit, yogurt, oats, seeds, and a crunchy topping in a bowl.'
-  )
-  ON CONFLICT (title) DO UPDATE
-  SET instructions = EXCLUDED.instructions
-  RETURNING id
-),
-cleared AS (
-  DELETE FROM recipe_ingredients
-  WHERE recipe_id = (SELECT id FROM recipe)
-)
-INSERT INTO recipe_ingredients (recipe_id, name, amount, sort_order)
-SELECT recipe.id, ingredient.name, ingredient.amount, ingredient.sort_order
-FROM recipe
-CROSS JOIN (
-  VALUES
-    ('Fruit', '100 g', 1),
-    ('Yogurt', '200 g', 2),
-    ('Oats', '20 g', 3),
-    ('Seeds', '1 tsp', 4),
-    ('Crunchy topping', '10 g', 5)
-) AS ingredient(name, amount, sort_order);

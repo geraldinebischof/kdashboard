@@ -101,7 +101,7 @@ const payload = {
 Telegram sends a webhook to InsForge.
 
 The webhook checks:
-secret header + allowed chat ID
+secret header + allowed chat IDs
 
 Code:
 [`functions/telegram-webhook.ts`](functions/telegram-webhook.ts)
@@ -126,7 +126,7 @@ if (receivedSecret !== configuredSecret) {
   return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
 }
 
-if (chatId !== allowedChatId) {
+if (!allowedChatIds.has(chatId)) {
   return jsonResponse({ ok: true, ignored: true, reason: "chat_not_allowed" });
 }
 ```
