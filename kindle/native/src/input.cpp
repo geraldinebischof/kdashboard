@@ -9,6 +9,7 @@
 #ifdef __linux__
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -57,7 +58,6 @@ void* watcherMain(void* raw) {
   if (!self) return NULL;
   while (self->running()) {
     self->poll();
-    usleep(250000);
   }
   return NULL;
 }
@@ -95,7 +95,7 @@ int InputManager::applyTouchWithDebounce() {
   // unconsumed; rapid taps then collapse to a single dispatch per render.
   if (touch_.pending_action != kTouchNone) return 0;
   const long long now = nowMs();
-  if (now - last_action_ms_ < 300) return 0;
+  if (now - last_action_ms_ < 100) return 0;
   const int w = screen_width_;
   const int h = screen_height_;
   const int x = x_;
@@ -130,6 +130,13 @@ int InputManager::applyTouchWithDebounce() {
   touch_.pending_touch_x = x;
   touch_.pending_touch_y = y;
   last_action_ms_ = now;
+  // Nudge the wake pipe so the main loop's select() dispatches this tap
+  // immediately instead of waiting for its next timer tick.
+  if (wake_fd_ >= 0) {
+    char c = 1;
+    const ssize_t w = ::write(wake_fd_, &c, 1);
+    (void)w;  // EAGAIN (pipe full) is harmless: an earlier byte still wakes it
+  }
   return 1;
 }
 
@@ -216,7 +223,23 @@ int InputManager::poll() {
     in_contact_ = 0;
   }
 
+  // Block until at least one device has input ready, instead of burning a fixed
+  // delay each loop: the kernel wakes us the instant a touch arrives. A bounded
+  // timeout keeps shutdown responsive — close() flips running_ then joins, and
+  // join latency is bounded by this value rather than an indefinite block.
+  struct pollfd pfds[16];
+  int nfds = 0;
+  for (int i = 0; i < count_ && nfds < 16; i++) {
+    pfds[nfds].fd = devices_[i].fd;
+    pfds[nfds].events = POLLIN;
+    pfds[nfds].revents = 0;
+    nfds++;
+  }
+  const int ready = ::poll(pfds, nfds, 250);
+  if (ready <= 0) return 0;
+
   for (int i = 0; i < count_; i++) {
+    if (!(pfds[i].revents & (POLLIN | POLLERR | POLLHUP))) continue;
     Device* device = &devices_[i];
     while (1) {
       input_event event;

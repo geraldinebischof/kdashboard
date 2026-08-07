@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <fcntl.h>
+#include <sys/select.h>
+
 #include "eips.h"
 #include "input.h"
 #include "json_parser.h"
@@ -71,10 +74,6 @@ int renderViaFbink(const Dashboard* dashboard, const char* status, const char* s
   return 0;
 }
 
-int shouldRepaintCachedTick(int tick) {
-  return tick == 5;
-}
-
 // Circular page wrapping used by the PREV/NEXT touch handlers. NEXT past the
 // last page wraps to the first (offset 0); PREV before the first page wraps to
 // the start of the last page. The final offset is still snapped/clamped at
@@ -89,6 +88,11 @@ int wrapPrevOffset(int offset, int page_size, int count) {
   if (page_size <= 0 || count <= 0) return 0;
   const int pages = (count + page_size - 1) / page_size;
   return (pages - 1) * page_size;
+}
+
+void setNonblock(int fd) {
+  const int flags = fcntl(fd, F_GETFL, 0);
+  if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
 }  // namespace
@@ -288,23 +292,59 @@ int App::handlePendingTouch() {
 }
 
 int App::waitForWakeEvent(int seconds, int allow_repaint) {
-  for (int elapsed = 1; elapsed <= seconds && g_running; elapsed++) {
+  const long long start = monotonicMs();
+  const long long deadline = start + static_cast<long long>(seconds) * 1000LL;
+  const int wake_fd = wake_pipe_[0];
+  bool repainted = false;
+
+  while (g_running) {
+    const long long now = monotonicMs();
+    if (now >= deadline) break;
+
+    // One cached repaint ~5s into the wait (mirrors the old tick==5 behavior).
+    if (allow_repaint && !repainted && now - start >= 5000LL) {
+      fprintf(stderr, "render=repaint tick=5\n");
+      renderCachedPayload("cached/local");
+      repainted = true;
+    }
+
+    // Drain the wake pipe: a byte means the input thread queued a tap, which we
+    // then act on immediately below instead of on the next timer tick.
+    if (wake_fd >= 0) {
+      char buf[64];
+      while (::read(wake_fd, buf, sizeof(buf)) > 0) {
+      }
+    }
+
     if (touch_.pending_action != kTouchNone) {
       const int touch_result = handlePendingTouch();
       if (!g_running) return 0;
       if (touch_result == 2) return 1;
       if (touch_result == 1) renderCachedPayload("cached/local");
-      continue;
+      continue;  // re-loop: drain any follow-up tap queued during the render
     }
     if (g_event_refresh) {
       fprintf(stderr, "events=refresh_now\n");
       return 1;
     }
-    if (allow_repaint && shouldRepaintCachedTick(elapsed)) {
-      fprintf(stderr, "render=repaint tick=%d\n", elapsed);
-      renderCachedPayload("cached/local");
+
+    // Block until the wake pipe is signaled (instant tap dispatch) or a short
+    // timeout elapses. The timeout cap keeps g_event_refresh and the
+    // repaint/total-time bounds honored even with no touch input.
+    long long timeout_ms = deadline - now;
+    if (timeout_ms > 200) timeout_ms = 200;
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    int maxfd = -1;
+    if (wake_fd >= 0) {
+      FD_SET(wake_fd, &rfds);
+      maxfd = wake_fd;
     }
-    sleep(1);
+    struct timeval tv;
+    tv.tv_sec = static_cast<long>(timeout_ms / 1000);
+    tv.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
+    const int sr = ::select(maxfd + 1, &rfds, NULL, NULL, &tv);
+    (void)sr;  // 0 = timeout, >0 = pipe ready, <0 = interrupted; loop re-checks
   }
   return 1;
 }
@@ -335,7 +375,16 @@ int App::run(int argc, char** argv) {
   signal(SIGTERM, handleSignal);
   navigator_.applyInitialView(options_.view);
 
+  if (pipe(wake_pipe_) == 0) {
+    setNonblock(wake_pipe_[0]);
+    setNonblock(wake_pipe_[1]);
+  } else {
+    wake_pipe_[0] = -1;
+    wake_pipe_[1] = -1;
+  }
+
   InputManager input(touch_, last_screen_width_, last_screen_height_);
+  input.setWakeFd(wake_pipe_[1]);
   input.open();
   input.startWatcher();
   if (!options_.once && !options_.render_only[0]) {
@@ -410,6 +459,14 @@ int App::run(int argc, char** argv) {
   }
 
   input.close();
+  if (wake_pipe_[0] >= 0) {
+    ::close(wake_pipe_[0]);
+    wake_pipe_[0] = -1;
+  }
+  if (wake_pipe_[1] >= 0) {
+    ::close(wake_pipe_[1]);
+    wake_pipe_[1] = -1;
+  }
   pgm_cache_.clear();
   return 0;
 }

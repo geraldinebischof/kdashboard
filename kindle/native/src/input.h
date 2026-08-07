@@ -32,6 +32,12 @@ class InputManager {
   void startWatcher();  // spawn the polling thread
 
   int deviceCount() const { return count_; }
+
+  // Write end of the wake pipe. The watcher writes a byte here on each resolved
+  // tap so the main loop's select() dispatches it instantly instead of on its
+  // next timer tick. -1 leaves the wake disabled (degrades to polled waiting).
+  void setWakeFd(int fd) { wake_fd_ = fd; }
+
 #ifdef __linux__
   // Read by the watcher thread each loop iteration; flipped to 0 by close().
   bool running() const { return running_ != 0; }
@@ -82,6 +88,7 @@ class InputManager {
   // space taps from matching a button under a different orientation.
   [[maybe_unused]] int locked_transform_ = -1;
   [[maybe_unused]] long long last_action_ms_ = 0;
+  [[maybe_unused]] int wake_fd_ = -1;
 
 #ifdef __linux__
   // Set to 0 by close() before joining watcher_; the watcher loop watches it

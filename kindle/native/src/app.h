@@ -58,6 +58,10 @@ class App {
   Navigator navigator_;
   FramebufferRenderer framebuffer_;
   DashboardClient client_;
+  // Self-pipe: the input thread writes a byte to [1] on each resolved tap; the
+  // main loop select()s on [0] so it wakes instantly instead of polling. {-1,-1}
+  // when creation failed (degrades gracefully to periodic waiting).
+  int wake_pipe_[2] = {-1, -1};
 };
 
 #endif  // KINDLE_DASHBOARD_APP_H
