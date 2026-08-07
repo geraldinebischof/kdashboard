@@ -7,6 +7,7 @@ const volumeArg = process.argv.slice(2).find((arg) => arg !== "--force");
 const dataUrl = process.env.DASHBOARD_DATA_URL || "";
 const eventsUrl = process.env.DASHBOARD_EVENTS_URL || "";
 const toggleUrl = process.env.DASHBOARD_TOGGLE_URL || "";
+const deleteUrl = process.env.DASHBOARD_DELETE_URL || "";
 const readToken = process.env.DASHBOARD_READ_TOKEN || "";
 const toggleToken = process.env.DASHBOARD_TOGGLE_TOKEN || "";
 const archive = path.resolve("kindle/native/build/kindle-dashboard-kual.tar.gz");
@@ -57,16 +58,27 @@ rmSync(path.join(documentsDir, "._kindle-dashboard-launch.sh"), { force: true })
 rmSync(path.join(documentsDir, "._kindle-dashboard-launch-light.sh"), { force: true });
 rmSync(path.join(documentsDir, "._kindle-dashboard-launch-dark.sh"), { force: true });
 
+const effectiveDeleteUrl =
+  deleteUrl ||
+  deriveDeleteUrlFromToggle(configValue(existingConfig, "DASHBOARD_TOGGLE_URL")) ||
+  deriveDeleteUrlFromToggle(toggleUrl);
+
 if (existingConfig) {
-  writeFileSync(targetConfig, existingConfig);
+  let migrated = existingConfig;
+  if (!configValue(migrated, "DASHBOARD_DELETE_URL") && effectiveDeleteUrl) {
+    migrated = setConfigKey(migrated, "DASHBOARD_DELETE_URL", effectiveDeleteUrl);
+    console.log("Migrated dashboard config: added DASHBOARD_DELETE_URL");
+  }
+  writeFileSync(targetConfig, migrated);
   console.log(`Preserved existing dashboard config at ${targetConfig}`);
-} else if (dataUrl || eventsUrl || toggleUrl) {
+} else if (dataUrl || eventsUrl || toggleUrl || deleteUrl) {
   writeFileSync(
     targetConfig,
     [
       `DASHBOARD_DATA_URL="${shellDoubleQuote(dataUrl)}"`,
       `DASHBOARD_EVENTS_URL="${shellDoubleQuote(eventsUrl)}"`,
       `DASHBOARD_TOGGLE_URL="${shellDoubleQuote(toggleUrl)}"`,
+      `DASHBOARD_DELETE_URL="${shellDoubleQuote(effectiveDeleteUrl)}"`,
       `DASHBOARD_READ_TOKEN="${shellDoubleQuote(readToken)}"`,
       `DASHBOARD_TOGGLE_TOKEN="${shellDoubleQuote(toggleToken)}"`,
       "",
@@ -154,4 +166,25 @@ function forceShortcutMode(script, value) {
 
 function shellDoubleQuote(value) {
   return String(value).replace(/["\\$`]/g, "\\$&");
+}
+
+function configValue(configText, key) {
+  const re = new RegExp(`^\\s*${key}\\s*=\\s*["']?([^"'^\\n]*)["']?`, "m");
+  const m = configText.match(re);
+  return m ? m[1].trim() : "";
+}
+
+function setConfigKey(configText, key, value) {
+  const line = `${key}="${shellDoubleQuote(value)}"`;
+  const re = new RegExp(`^[ \\t]*${key}[ \\t]*=.*$`, "m");
+  if (re.test(configText)) {
+    return configText.replace(re, line);
+  }
+  if (configText === "") return `${line}\n`;
+  return configText.endsWith("\n") ? `${configText}${line}\n` : `${configText}\n${line}\n`;
+}
+
+function deriveDeleteUrlFromToggle(toggleUrlValue) {
+  if (!toggleUrlValue || !toggleUrlValue.includes("kindle-dashboard-toggle")) return "";
+  return toggleUrlValue.replace("kindle-dashboard-toggle", "kindle-dashboard-delete");
 }
