@@ -54,7 +54,7 @@ class TouchRegionRegistry {
   int pending_touch_rect_valid = 0;
 
  private:
-  static constexpr int kMaxTouchRegions = 32;
+  static constexpr int kMaxTouchRegions = 96;
   TouchRegion regions_[kMaxTouchRegions] = {};
   int count_ = 0;
 };

@@ -324,6 +324,13 @@ int App::run(int argc, char** argv) {
     return 0;
   }
 
+  if (!options_.delete_url[0]) {
+    fprintf(stderr, "config=delete_disabled missing_delete_url\n");
+  }
+  if (!options_.toggle_url[0] || !options_.toggle_token[0]) {
+    fprintf(stderr, "config=delete_disabled missing_toggle_creds\n");
+  }
+
   signal(SIGINT, handleSignal);
   signal(SIGTERM, handleSignal);
   navigator_.applyInitialView(options_.view);
