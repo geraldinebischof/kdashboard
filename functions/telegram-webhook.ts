@@ -263,10 +263,7 @@ async function applyPlannerAction(admin: any, action: PlannerAction): Promise<st
   }
 
   if (action.action === "add") {
-    const rows = action.items.map((text) => ({ list_key: action.list_key, text, done: false }));
-    const { error } = await admin.database.from("planner_items").insert(rows);
-    if (error) throw error;
-    return `Added ${action.items.join(", ")} to ${listName}.`;
+    return applyPlannerAdd(admin, action.list_key, action.items, listName);
   }
 
   const done = action.action === "complete";
@@ -298,6 +295,105 @@ async function applyPlannerAction(admin: any, action: PlannerAction): Promise<st
   }
 
   return `Removed ${action.items.join(", ")} from ${listName}.`;
+}
+
+// Add items with dedup + revive semantics. For each item, match existing rows in
+// the same list by exact (case-insensitive, trimmed) text:
+//  - no match: insert one new open row.
+//  - an open match exists: skip it; report "already on the list".
+//  - only done matches exist: revive — consolidate to the newest row set open,
+//    delete the rest, so a single open row remains.
+// The in-memory map is updated as items are processed so duplicate items within
+// the same message are caught (e.g. "/addgrocery milk, milk").
+async function applyPlannerAdd(
+  admin: any,
+  listKey: ListKey,
+  items: string[],
+  listName: string
+): Promise<string> {
+  const { data, error } = await admin.database
+    .from("planner_items")
+    .select("id,text,done,created_at")
+    .eq("list_key", listKey);
+  if (error) throw error;
+
+  const byText = new Map<string, Array<{ id: string; done: boolean; created_at: string }>>();
+  for (const row of Array.isArray(data) ? data : []) {
+    const entry = {
+      id: String(row.id),
+      done: Boolean(row.done),
+      created_at: String(row.created_at)
+    };
+    const key = normalizeItemText(String(row.text));
+    const list = byText.get(key);
+    if (list) list.push(entry);
+    else byText.set(key, [entry]);
+  }
+
+  const added: string[] = [];
+  const already: string[] = [];
+  const revived: string[] = [];
+
+  for (const raw of items) {
+    const text = raw.trim();
+    if (!text) continue;
+    const key = normalizeItemText(text);
+    const existing = byText.get(key) ?? [];
+
+    if (existing.length === 0) {
+      const { data: inserted, error: insertError } = await admin.database
+        .from("planner_items")
+        .insert([{ list_key: listKey, text, done: false }])
+        .select("id");
+      if (insertError) throw insertError;
+      const id = String(Array.isArray(inserted) ? inserted[0]?.id ?? "" : inserted?.id ?? "");
+      byText.set(key, [{ id, done: false, created_at: new Date().toISOString() }]);
+      added.push(text);
+      continue;
+    }
+
+    if (existing.some((row) => !row.done)) {
+      already.push(text);
+      continue;
+    }
+
+    // All matches done: consolidate to the newest row, delete the rest.
+    existing.sort((a, b) =>
+      a.created_at === b.created_at
+        ? (a.id < b.id ? -1 : 1)
+        : (a.created_at < b.created_at ? -1 : 1)
+    );
+    const newest = existing[existing.length - 1];
+    const others = existing.filter((row) => row.id !== newest.id);
+    if (others.length > 0) {
+      const { error: deleteError } = await admin.database
+        .from("planner_items")
+        .delete()
+        .in("id", others.map((row) => row.id));
+      if (deleteError) throw deleteError;
+    }
+    const { error: updateError } = await admin.database
+      .from("planner_items")
+      .update({ done: false })
+      .eq("id", newest.id);
+    if (updateError) throw updateError;
+    byText.set(key, [{ id: newest.id, done: false, created_at: new Date().toISOString() }]);
+    revived.push(text);
+  }
+
+  const lines: string[] = [];
+  if (added.length > 0) lines.push(`Added ${added.join(", ")} to ${listName}.`);
+  if (already.length > 0) lines.push(capitalize(`${already.join(", ")} already on ${listName}.`));
+  if (revived.length > 0) lines.push(capitalize(`${revived.join(", ")} already on ${listName} (done) — marked open.`));
+  return lines.join("\n");
+}
+
+function normalizeItemText(text: string): string {
+  return text.trim().toLowerCase();
+}
+
+function capitalize(text: string): string {
+  return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
 
 function plannerListLabel(listKey: ListKey): string {

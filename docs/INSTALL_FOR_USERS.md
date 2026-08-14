@@ -350,6 +350,7 @@ cp config.sh.example config.sh
 DASHBOARD_DATA_URL="https://your-project.insforge.app/functions/kindle-dashboard-data"
 DASHBOARD_EVENTS_URL="https://your-project.function2.insforge.app/kindle-dashboard-events"
 DASHBOARD_TOGGLE_URL="https://your-project.insforge.app/functions/kindle-dashboard-toggle"
+DASHBOARD_DELETE_URL="https://your-project.insforge.app/functions/kindle-dashboard-delete"
 DASHBOARD_READ_TOKEN="replace-with-your-generated-read-token"
 DASHBOARD_TOGGLE_TOKEN="replace-with-your-generated-toggle-token"
 INTERVAL="3600"
