@@ -1,0 +1,32 @@
+name: Backend watchdog
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: backend-watchdog
+  cancel-in-progress: false
+
+permissions: {}
+
+timeout-minutes: 15
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run backend watchdog
+        env:
+          HEALTH_URLS: ${{ vars.HEALTH_URLS }}
+          HEALTH_BEARER_TOKEN: ${{ secrets.DASHBOARD_READ_TOKEN }}
+          INSORGE_USER_API_KEY: ${{ secrets.INSFORGE_USER_API_KEY }}
+          INSORGE_PROJECT_ID: ${{ secrets.INSORGE_PROJECT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+        run: node scripts/watchdog.mjs

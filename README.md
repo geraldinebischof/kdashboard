@@ -41,8 +41,8 @@ If you are using a coding assistant for setup, use
 - `ios/HealthSyncCompanion/`: Optional iOS app that reads Apple Health daily
   aggregates and posts them to the `health-sync` function.
 - `scripts/`: Setup and maintenance helpers for InsForge bootstrapping,
-  Telegram webhook configuration, Kindle native install, and Kindle proof
-  checks.
+  Telegram webhook configuration, Kindle native install, Kindle proof
+  checks, and backend watchdog health checks.
 - `docs/`: Human and coding-assistant setup guides.
 
 ## Technical Breakdown
@@ -431,3 +431,24 @@ if (!renderCachedPayload(&options, fetched ? "live" : "cached/offline")) {
   renderToEips(lines, count);
 }
 ```
+
+### Backend Watchdog
+
+A GitHub Actions job ([`.github/workflows/backend-watchdog.yml`](.github/workflows/backend-watchdog.yml))
+runs [`scripts/watchdog.mjs`](scripts/watchdog.mjs) every 15 minutes. It pings
+the Telegram webhook and the dashboard data endpoint, which doubles as a
+keep-alive against idle auto-pausing. If checks fail and InsForge reports the
+project paused, it runs `projects restore`, polls until healthy again, and
+notifies the owner chat through the bot. Failures that are not pauses get an
+alert without a restore attempt.
+
+Check current health locally without side effects:
+
+```sh
+npm run watchdog -- --dry-run
+```
+
+GitHub repo secrets: `INSORGE_USER_API_KEY` (InsForge Profile → API Keys),
+`INSORGE_PROJECT_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID`, and
+`DASHBOARD_READ_TOKEN` for an authenticated data-endpoint check. The repo
+variable `HEALTH_URLS` (optional) overrides the default endpoints.
