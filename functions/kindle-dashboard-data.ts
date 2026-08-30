@@ -155,7 +155,7 @@ async function loadDashboardPayload(): Promise<DashboardPayload> {
         .filter((item) => item.list_key === key)
         .sort((a, b) => {
           if (a.done !== b.done) return a.done ? 1 : -1;
-          return b.created_at.localeCompare(a.created_at);
+          return a.text.localeCompare(b.text, undefined, { sensitivity: "base" });
         })
         .map((item) => ({
           id: item.id,
