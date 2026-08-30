@@ -518,3 +518,110 @@ void RecipePanel::render(Canvas& canvas, const Dashboard& dashboard, const char*
     canvas.drawTextWrapped(content_x, steps_y + 36, content_w, recipe->instructions, 2, 0, 4);
   }
 }
+
+namespace {
+
+// Advent door geometry: a tall centered "door" with room above/below for the
+// title and tap hint. Sized for the fallback 760x1024 screen and clamped for
+// smaller dumps/preview sizes.
+void adventDoorGeometry(const Canvas& canvas, int* door_x, int* door_y, int* door_w, int* door_h) {
+  int w = 440;
+  int h = 620;
+  const int avail_w = canvas.width - 80;
+  const int avail_h = canvas.height - kKindleStatusBarHeight - 200;
+  if (w > avail_w) w = avail_w < 120 ? 120 : avail_w;
+  if (h > avail_h) h = avail_h < 160 ? 160 : avail_h;
+  *door_w = w;
+  *door_h = h;
+  *door_x = (canvas.width - w) / 2;
+  *door_y = kKindleStatusBarHeight + (canvas.height - kKindleStatusBarHeight - h) / 2;
+}
+
+// 5-pointed star outline via the line primitive, from a fixed vertex table
+// (outer radius 100 / inner radius ~42, starting at the top point) so no
+// floating-point trig is needed at other sizes.
+void drawStarOutline(Canvas& canvas, int cx, int cy, int radius, unsigned char color) {
+  static const int kVertices[10][2] = {
+      {0, -100}, {59, -81}, {95, -31}, {95, 31}, {59, 81},
+      {0, 100}, {-59, 81}, {-95, 31}, {-95, -31}, {-59, -81},
+  };
+  const int scale = radius / 100 < 1 ? 1 : radius / 100;
+  int prev_x = cx + kVertices[9][0] * radius / 100;
+  int prev_y = cy + kVertices[9][1] * radius / 100;
+  for (int i = 0; i < 10; i++) {
+    const int x = cx + kVertices[i][0] * radius / 100;
+    const int y = cy + kVertices[i][1] * radius / 100;
+    canvas.line(prev_x, prev_y, x, y, scale, color);
+    prev_x = x;
+    prev_y = y;
+  }
+}
+
+}  // namespace
+
+void AdventPanel::render(Canvas& canvas, int day, int door_open, RenderContext& ctx) const {
+  if (day < 1 || day > kAdventDays) return;
+
+  // Full-screen popup backdrop painted over whatever view is underneath.
+  const int shell_y = kKindleStatusBarHeight;
+  canvas.fillRect(0, shell_y, canvas.width, canvas.height - shell_y, 255);
+
+  canvas.drawTextCentered(canvas.width / 2, shell_y + 18, canvas.width - 80, "ADVENT", 4, 0);
+
+  int door_x, door_y, door_w, door_h;
+  adventDoorGeometry(canvas, &door_x, &door_y, &door_w, &door_h);
+  const int door_cx = door_x + door_w / 2;
+  const int door_cy = door_y + door_h / 2;
+
+  char day_label[8];
+  snprintf(day_label, sizeof(day_label), "%d", day);
+
+  if (!door_open) {
+    // Closed door: double border, wreath ring around the day number, handle.
+    canvas.doubleRoundedRect(door_x, door_y, door_w, door_h, 30, 0);
+    int wreath_r = door_h / 3;
+    if (wreath_r > 170) wreath_r = 170;
+    if (wreath_r < 60) wreath_r = 60;
+    canvas.circleRing(door_cx, door_cy, wreath_r, 10, 100, 0);
+    const int scale = textWidth(day_label, 16) <= wreath_r * 2 - 40 ? 16 : 10;
+    canvas.drawTextCentered(door_cx, door_cy - 7 * scale / 2, wreath_r * 2 - 40, day_label, scale, 0);
+    canvas.fillRoundedRect(door_x + door_w - 56, door_cy - 22, 12, 44, 6, 0);
+    canvas.drawTextCentered(canvas.width / 2, door_y + door_h + 24, canvas.width - 80, "TAP THE DOOR", 3, 0);
+  } else {
+    // Open door: the postcard fills the door frame. Probing the cache first
+    // lets a missing/corrupt PGM fall back to a drawn motif so the popup
+    // never breaks (drawPgmImageContain would only draw an "IMAGE" box).
+    char device_path[192];
+    char local_path[192];
+    snprintf(device_path, sizeof(device_path), "%s/day%02d.pgm", kAdventAssetsPath, day);
+    snprintf(local_path, sizeof(local_path), "%s/day%02d.pgm", kAdventAssetsLocalPath, day);
+    int image_w = 0;
+    int image_h = 0;
+    const unsigned char* loaded = ctx.pgm_cache.load(device_path, local_path, &image_w, &image_h);
+    canvas.doubleRoundedRect(door_x, door_y, door_w, door_h, 30, 0);
+    const int margin = 16;
+    const int frame_w = door_w - 2 * margin;
+    const int frame_h = door_h - 2 * margin;
+    if (loaded && frame_w > 0 && frame_h > 0) {
+      canvas.drawPgmImageContain(door_x + margin, door_y + margin, frame_w, frame_h,
+                                 device_path, local_path, ctx.invert_images, ctx.pgm_cache);
+    } else {
+      drawStarOutline(canvas, door_cx, door_cy - 40, 90, 0);
+      canvas.drawTextCentered(door_cx, door_cy + 100, door_w - 40, "MERRY CHRISTMAS", 3, 0);
+    }
+    char corner[16];
+    snprintf(corner, sizeof(corner), "DEC %d", day);
+    canvas.drawText(door_x + margin + 6, door_y + door_h - margin - 30, corner, 3, 0);
+  }
+
+  // Door region first, X last: the registry resolves most-recently-added
+  // first, so the X can never be shadowed by the door (mirrors the
+  // drawDeleteButton ordering pattern).
+  Rect door_rect = {door_x, door_y, door_w, door_h};
+  ctx.touch.add(door_rect, kTouchOpenAdventDoor, -1, -1, "", 0);
+
+  Rect exit_rect = exitButtonRectForScreen(canvas.width, canvas.height);
+  canvas.strokeRoundedRect(exit_rect.x, exit_rect.y, exit_rect.w, exit_rect.h, 14, 2, 0);
+  canvas.drawTextCentered(exit_rect.x + exit_rect.w / 2, exit_rect.y + 10, exit_rect.w - 16, "X", 4, 0);
+  ctx.touch.add(exit_rect, kTouchCloseAdvent, -1, -1, "", 0);
+}

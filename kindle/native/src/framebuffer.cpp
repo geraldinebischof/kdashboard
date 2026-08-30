@@ -161,7 +161,7 @@ void FramebufferRenderer::flashRect(Rect rect) {
   fprintf(stderr, "visual-feedback=blink rect=%d,%d,%d,%d\n", rect.x, rect.y, rect.w, rect.h);
 }
 
-int FramebufferRenderer::render(Navigator& navigator, const Dashboard& dashboard, const char* status, RenderContext& ctx, const char* save_pgm, int& last_width, int& last_height) {
+int FramebufferRenderer::render(CanvasDrawFn draw, void* draw_data, const char* save_pgm, int& last_width, int& last_height) {
   int fd = open("/dev/fb0", O_RDWR);
   if (fd < 0) {
     fprintf(stderr, "render=framebuffer open_failed\n");
@@ -201,7 +201,7 @@ int FramebufferRenderer::render(Navigator& navigator, const Dashboard& dashboard
   }
   last_width = canvas.width;
   last_height = canvas.height;
-  navigator.render(canvas, dashboard, status, ctx);
+  if (draw) draw(canvas, draw_data);
   if (save_pgm && save_pgm[0]) {
     writePgm(save_pgm, &canvas);
     fprintf(stderr, "render=save-pgm %s width=%d height=%d\n", save_pgm, canvas.width, canvas.height);
@@ -221,7 +221,7 @@ int FramebufferRenderer::render(Navigator& navigator, const Dashboard& dashboard
 
 void FramebufferRenderer::flashRect(Rect) {}
 
-int FramebufferRenderer::render(Navigator&, const Dashboard&, const char*, RenderContext&, const char*, int&, int&) {
+int FramebufferRenderer::render(CanvasDrawFn, void*, const char*, int&, int&) {
   fprintf(stderr, "render=framebuffer unavailable\n");
   return 0;
 }

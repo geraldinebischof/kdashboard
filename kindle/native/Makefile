@@ -59,6 +59,7 @@ extension: $(KINDLE_TARGET)
 	cp ../kual/kindle-dashboard/config.sh.example $(EXTENSION_DIR)/config.sh.example
 	cp ../kual/kindle-dashboard/menu.json $(EXTENSION_DIR)/menu.json
 	if [ -d ../kual/kindle-dashboard/assets/recipes ]; then cp -R ../kual/kindle-dashboard/assets/recipes $(EXTENSION_DIR)/assets/recipes; fi
+	if [ -d ../kual/kindle-dashboard/assets/advent ]; then cp -R ../kual/kindle-dashboard/assets/advent $(EXTENSION_DIR)/assets/advent; fi
 	cp ../kual/kindle-dashboard/assets/cookbook-icon.pgm $(EXTENSION_DIR)/assets/cookbook-icon.pgm
 	cp ../kual/kindle-dashboard/bin/menu-ping.sh $(EXTENSION_DIR)/bin/menu-ping.sh
 	cp ../kual/kindle-dashboard/bin/start.sh $(EXTENSION_DIR)/bin/start.sh
@@ -84,6 +85,7 @@ extension-zig: $(ZIG_TARGET_BINARY)
 	cp ../kual/kindle-dashboard/config.sh.example $(EXTENSION_DIR)/config.sh.example
 	cp ../kual/kindle-dashboard/menu.json $(EXTENSION_DIR)/menu.json
 	if [ -d ../kual/kindle-dashboard/assets/recipes ]; then cp -R ../kual/kindle-dashboard/assets/recipes $(EXTENSION_DIR)/assets/recipes; fi
+	if [ -d ../kual/kindle-dashboard/assets/advent ]; then cp -R ../kual/kindle-dashboard/assets/advent $(EXTENSION_DIR)/assets/advent; fi
 	cp ../kual/kindle-dashboard/assets/cookbook-icon.pgm $(EXTENSION_DIR)/assets/cookbook-icon.pgm
 	cp ../kual/kindle-dashboard/bin/menu-ping.sh $(EXTENSION_DIR)/bin/menu-ping.sh
 	cp ../kual/kindle-dashboard/bin/start.sh $(EXTENSION_DIR)/bin/start.sh

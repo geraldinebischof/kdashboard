@@ -3,6 +3,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <fcntl.h>
@@ -95,13 +97,136 @@ void setNonblock(int fd) {
   if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
+// Advent calendar popup helpers ------------------------------------------------
+
+// Today's December day the popup should show, or -1 outside Dec 1..24. Device
+// localtime is the clock source (the Kindle sets it via NTP when online).
+int adventDayForToday() {
+  const time_t now = time(NULL);
+  const struct tm* local_time = localtime(&now);
+  if (!local_time) return -1;
+  if (local_time->tm_mon != 11) return -1;  // tm_mon is 0-based; 11 = December
+  if (local_time->tm_mday < 1 || local_time->tm_mday > kAdventDays) return -1;
+  return local_time->tm_mday;
+}
+
+void adventDateKey(char* out, size_t size) {
+  const time_t now = time(NULL);
+  const struct tm* local_time = localtime(&now);
+  if (!local_time) {
+    snprintf(out, size, "0000-00-00");
+    return;
+  }
+  snprintf(out, size, "%04d-%02d-%02d", local_time->tm_year + 1900, local_time->tm_mon + 1, local_time->tm_mday);
+}
+
+// State file paths: the device location, with a local-dev fallback next to
+// the cache payload (mirroring the device/local dual-path convention of the
+// asset constants).
+void adventStatePaths(const Options& options, char* primary, size_t primary_size, char* fallback, size_t fallback_size) {
+  copyText(primary, primary_size, kAdventStatePath);
+  const char* slash = strrchr(options.cache, '/');
+  if (slash) {
+    const size_t dir_len = static_cast<size_t>(slash - options.cache);
+    const char* suffix = "/advent-state.txt";
+    if (dir_len + strlen(suffix) + 1 <= fallback_size) {
+      memcpy(fallback, options.cache, dir_len);
+      memcpy(fallback + dir_len, suffix, strlen(suffix) + 1);
+      return;
+    }
+  }
+  copyText(fallback, fallback_size, "advent-state.txt");
+}
+
+// The state file is one line per handled day: "YYYY-MM-DD dayNN open" or
+// "... dismissed". Either entry suppresses the popup for that day.
+int adventDayRecorded(const char* primary_path, const char* fallback_path, const char* date_key, int day) {
+  char needle[48];
+  snprintf(needle, sizeof(needle), "%s day%02d", date_key, day);
+  const char* paths[2] = {primary_path, fallback_path};
+  for (int i = 0; i < 2; i++) {
+    if (!paths[i] || !paths[i][0]) continue;
+    char* content = readFile(paths[i]);
+    if (!content) continue;
+    const int found = strstr(content, needle) != NULL;
+    free(content);
+    if (found) return 1;
+  }
+  return 0;
+}
+
+void adventRecordDay(const char* primary_path, const char* fallback_path, const char* date_key, int day, const char* kind) {
+  char line[64];
+  snprintf(line, sizeof(line), "%s day%02d %s\n", date_key, day, kind);
+  const char* paths[2] = {primary_path, fallback_path};
+  for (int i = 0; i < 2; i++) {
+    if (!paths[i] || !paths[i][0]) continue;
+    FILE* file = fopen(paths[i], "a");
+    if (!file) continue;
+    fputs(line, file);
+    fclose(file);
+    return;
+  }
+  fprintf(stderr, "advent=state-write-failed day=%d\n", day);
+}
+
 }  // namespace
+
+void App::drawFrame(Canvas& canvas, void* data) {
+  FrameDrawRequest* request = static_cast<FrameDrawRequest*>(data);
+  request->app->drawCurrent(canvas, *request->dashboard, request->status);
+}
+
+// Recompute the advent overlay from date + state file. Sticky within a day:
+// once the overlay is up for day N it stays up (door open or closed) until X
+// dismisses it; only a fresh day re-consults the state file, so recording the
+// "open" entry never hides the just-opened picture.
+void App::updateAdventOverlayState() {
+  if (options_.advent_force > 0) {
+    // Preview mode: forced day, never reads or writes the state file.
+    // KINDLE_DASHBOARD_ADVENT_OPEN=1 previews the opened-door picture.
+    if (advent_day_ < 0) {
+      advent_day_ = options_.advent_force;
+      advent_door_open_ = getenv("KINDLE_DASHBOARD_ADVENT_OPEN") != NULL;
+      fprintf(stderr, "advent=popup forced=%d open=%d\n", advent_day_, advent_door_open_);
+    }
+    return;
+  }
+  const int today = adventDayForToday();
+  if (today < 0) {
+    advent_day_ = -1;
+    advent_door_open_ = 0;
+    return;
+  }
+  if (advent_day_ == today) return;  // already showing this day's popup
+  char primary[256];
+  char fallback[256];
+  char date_key[16];
+  adventStatePaths(options_, primary, sizeof(primary), fallback, sizeof(fallback));
+  adventDateKey(date_key, sizeof(date_key));
+  if (adventDayRecorded(primary, fallback, date_key, today)) {
+    advent_day_ = -1;
+    advent_door_open_ = 0;
+    return;
+  }
+  advent_day_ = today;
+  advent_door_open_ = 0;
+  fprintf(stderr, "advent=popup day=%d\n", advent_day_);
+}
 
 void App::drawCurrent(Canvas& canvas, const Dashboard& dashboard, const char* status) {
   last_screen_width_ = canvas.width;
   last_screen_height_ = canvas.height;
+  updateAdventOverlayState();
   RenderContext ctx = renderContext();
   navigator_.render(canvas, dashboard, status, ctx);
+  if (advent_day_ > 0) {
+    // The overlay owns the touchable surface while it is up: clearing the
+    // registry makes its door + X the only valid tap targets, and the home
+    // grid underneath stays reachable the moment X dismisses the popup.
+    ctx.touch.clear();
+    advent_panel_.render(canvas, advent_day_, advent_door_open_, ctx);
+  }
 }
 
 int App::dumpBitmapPreview(const Dashboard* dashboard, const char* status, const char* path, int width, int height) {
@@ -143,12 +268,13 @@ void App::renderPayload(const char* payload, const char* status, const char* dum
     fprintf(stderr, "timing=render status=fbink ms=%lld\n", monotonicMs() - started);
     return;
   }
-  RenderContext framebuffer_ctx = renderContext();
   // Mark the input thread busy for the duration of the framebuffer write +
   // e-ink refresh so a rapid follow-up tap can't stack a second flash+refresh
-  // on top of this one (which wedges the e-ink controller).
+  // on top of this one (which wedges the e-ink controller). drawFrame routes
+  // through drawCurrent so the advent overlay renders on-device too.
   touch_.busy = 1;
-  const int fb_ok = framebuffer_.render(navigator_, dashboard, status, framebuffer_ctx, save_pgm, last_screen_width_, last_screen_height_);
+  FrameDrawRequest draw_request = {this, &dashboard, status};
+  const int fb_ok = framebuffer_.render(&App::drawFrame, &draw_request, save_pgm, last_screen_width_, last_screen_height_);
   touch_.busy = 0;
   if (fb_ok) {
     freeDashboard(&dashboard);
@@ -285,6 +411,39 @@ int App::handlePendingTouch() {
     // missing_config" warning when the URL is empty, which is the correct
     // behavior until the delete endpoint is configured.
     client_.postDeleteItemAsync(options_.delete_url, options_.toggle_token, touch_.pending_item_id);
+    return 1;
+  }
+
+  if (action == kTouchOpenAdventDoor) {
+    if (advent_day_ > 0 && !advent_door_open_) {
+      fprintf(stderr, "touch=advent-open day=%d\n", advent_day_);
+      advent_door_open_ = 1;
+      if (options_.advent_force <= 0) {
+        char primary[256];
+        char fallback[256];
+        char date_key[16];
+        adventStatePaths(options_, primary, sizeof(primary), fallback, sizeof(fallback));
+        adventDateKey(date_key, sizeof(date_key));
+        adventRecordDay(primary, fallback, date_key, advent_day_, "open");
+      }
+    }
+    return 1;
+  }
+
+  if (action == kTouchCloseAdvent) {
+    fprintf(stderr, "touch=advent-close day=%d\n", advent_day_);
+    if (advent_day_ > 0 && !advent_door_open_ && options_.advent_force <= 0) {
+      // Dismissing an unopened day suppresses the popup for the rest of the
+      // day; an already-opened day recorded its "open" entry at door tap.
+      char primary[256];
+      char fallback[256];
+      char date_key[16];
+      adventStatePaths(options_, primary, sizeof(primary), fallback, sizeof(fallback));
+      adventDateKey(date_key, sizeof(date_key));
+      adventRecordDay(primary, fallback, date_key, advent_day_, "dismissed");
+    }
+    advent_day_ = -1;
+    advent_door_open_ = 0;
     return 1;
   }
 

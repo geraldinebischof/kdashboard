@@ -7,6 +7,7 @@
 #include "framebuffer.h"
 #include "model.h"
 #include "navigator.h"
+#include "panel.h"
 #include "pgm_cache.h"
 #include "touch_registry.h"
 
@@ -18,9 +19,22 @@ class App {
   int run(int argc, char** argv);
 
  private:
-  // Render the navigator's current view into `canvas`, recording the rendered
-  // dimensions for the input thread.
+  // Render the navigator's current view into `canvas` (plus the advent popup
+  // overlay when active), recording the rendered dimensions for the input
+  // thread.
   void drawCurrent(Canvas& canvas, const Dashboard& dashboard, const char* status);
+
+  // Adapter so FramebufferRenderer::render can call back into drawCurrent.
+  struct FrameDrawRequest {
+    App* app;
+    const Dashboard* dashboard;
+    const char* status;
+  };
+  static void drawFrame(Canvas& canvas, void* data);
+
+  // Recompute the advent overlay state (active day + door) from the current
+  // date and the persisted state file. Called at the top of every render.
+  void updateAdventOverlayState();
 
   int dumpBitmapPreview(const Dashboard* dashboard, const char* status, const char* path, int width, int height);
   void renderPayload(const char* payload, const char* status, const char* dump_pgm, const char* save_pgm, int dump_width, int dump_height);
@@ -52,6 +66,14 @@ class App {
   int cookbook_offset_ = 0;
   int cookbook_page_size_ = 8;
   int recipe_total_ = 0;
+
+  // Advent calendar popup overlay. advent_day_ > 0 means the popup is up for
+  // that December day (-1 = inactive); advent_door_open_ flips when the door
+  // is tapped. Deliberately NOT Navigator state: the overlay draws on top of
+  // the current view and X simply stops drawing it.
+  int advent_day_ = -1;
+  int advent_door_open_ = 0;
+  AdventPanel advent_panel_;
 
   TouchRegionRegistry touch_;
   PgmCache pgm_cache_;

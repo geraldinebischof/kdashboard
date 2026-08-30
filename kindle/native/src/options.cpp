@@ -27,6 +27,7 @@ void initOptions(Options* options) {
   parseSleepWindow(kDefaultSleepWindow, &options->sleep_start_minute, &options->sleep_end_minute);
   options->once = 0;
   options->invert_images = 0;
+  options->advent_force = 0;
 }
 
 int parseOptions(int argc, char** argv, Options* options) {
@@ -51,6 +52,21 @@ int parseOptions(int argc, char** argv, Options* options) {
     else if (strcmp(argv[i], "--invert-images") == 0) {
       options->invert_images = 1;
     }
+    else if (strncmp(argv[i], "--advent-force", 14) == 0) {
+      const char* suffix = argv[i] + 14;
+      if (suffix[0] == '\0') {
+        options->advent_force = 1;
+      } else if (suffix[0] == '=' && suffix[1] != '\0') {
+        options->advent_force = atoi(suffix + 1);
+      } else {
+        fprintf(stderr, "Invalid advent force argument: %s (use --advent-force or --advent-force=N with N in 1..%d)\n", argv[i], kAdventDays);
+        return 0;
+      }
+      if (options->advent_force < 1 || options->advent_force > kAdventDays) {
+        fprintf(stderr, "Advent day out of range: %d (use 1..%d)\n", options->advent_force, kAdventDays);
+        return 0;
+      }
+    }
     else if (strcmp(argv[i], "--render") == 0 && i + 1 < argc) copyText(options->render_only, sizeof(options->render_only), argv[++i]);
     else if (strcmp(argv[i], "--view") == 0 && i + 1 < argc) copyText(options->view, sizeof(options->view), argv[++i]);
     else if (strcmp(argv[i], "--dump-pgm") == 0 && i + 1 < argc) copyText(options->dump_pgm, sizeof(options->dump_pgm), argv[++i]);
@@ -63,7 +79,7 @@ int parseOptions(int argc, char** argv, Options* options) {
     }
     else if (strcmp(argv[i], "--save-pgm") == 0 && i + 1 < argc) copyText(options->save_pgm, sizeof(options->save_pgm), argv[++i]);
     else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-      printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--delete-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images]\n", argv[0]);
+      printf("Usage: %s [--url URL] [--events-url URL] [--toggle-url URL] [--delete-url URL] [--read-token TOKEN] [--toggle-token TOKEN] [--cache PATH] [--interval SECONDS] [--sleep-window HH:MM-HH:MM|off] [--once] [--invert-images] [--advent-force[=N]]\n", argv[0]);
       printf("       %s --render PATH [--view cookbook|recipe|todo|grocery|daily_chores] [--dump-pgm PATH] [--dump-size WIDTHxHEIGHT] [--save-pgm PATH]\n", argv[0]);
       exit(0);
     } else {

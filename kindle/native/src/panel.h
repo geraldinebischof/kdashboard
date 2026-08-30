@@ -87,7 +87,19 @@ class CookbookPanel : public Panel {
 class RecipePanel : public Panel {
  public:
   void render(Canvas& canvas, const Dashboard& dashboard, const char* status,
-              const ViewState& state, RenderContext& ctx) const override;
+               const ViewState& state, RenderContext& ctx) const override;
+};
+
+// Advent calendar popup, drawn as an App-level overlay ON TOP of the current
+// view (not a Navigator screen): from December 1st each day shows one door;
+// tapping it reveals a Christmasy monochrome postcard. The X button dismisses
+// the popup for that day without touching the navigation state underneath.
+// Callers must clear the touch registry before rendering so the overlay's
+// regions (door + X) are the only tappables.
+class AdventPanel {
+ public:
+  // day: 1..24 (which door to draw); door_open: 0 = closed door, 1 = picture.
+  void render(Canvas& canvas, int day, int door_open, RenderContext& ctx) const;
 };
 
 #endif  // KINDLE_DASHBOARD_PANEL_H

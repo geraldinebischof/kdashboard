@@ -22,7 +22,9 @@ enum TouchAction {
   kTouchListPrevPage = 12,   // list footer PREV -> show the previous page of items
   kTouchListNextPage = 13,   // list footer NEXT -> show the next page of items
   kTouchCookbookPrevPage = 14,  // cookbook footer PREV -> previous page of recipes
-  kTouchCookbookNextPage = 15   // cookbook footer NEXT -> next page of recipes
+  kTouchCookbookNextPage = 15,  // cookbook footer NEXT -> next page of recipes
+  kTouchOpenAdventDoor = 16,    // advent overlay door -> reveal the picture
+  kTouchCloseAdvent = 17        // advent overlay X -> dismiss the popup
 };
 
 struct Item {
@@ -79,6 +81,7 @@ struct Options {
   int sleep_end_minute;
   int once;
   int invert_images;
+  int advent_force;  // 0 = off; 1..24 renders the popup for that day regardless of date/state
 };
 
 struct Rect {
