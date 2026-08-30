@@ -11,6 +11,7 @@
     "check": "npm run native:check",
     "telegram:chat-id": "node scripts/get-telegram-chat-id.mjs",
     "telegram:configure": "node scripts/configure-telegram.mjs",
+    "watchdog": "node scripts/watchdog.mjs",
     "kit:backend": "node scripts/bootstrap-insforge-kit.mjs"
   },
   "devDependencies": {
